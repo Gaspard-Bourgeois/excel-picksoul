@@ -1,0 +1,100 @@
+Sub Convertir_images_en_notes()
+    Dim ws As Worksheet
+    Dim shp As Shape
+    Dim rngOrigine As Range
+    Dim cell As Range
+    Dim exclu As Variant
+    Dim skipImage As Boolean
+    Dim motCle As Variant
+    Dim altText As String
+    Dim tempPath As String
+    Dim chtObj As ChartObject
+    Dim maNote As Comment
+    Dim i As Long
+
+    ' Liste des mots-clés à chercher dans le texte de remplacement
+    exclu = Array("skip", "noresize", "logo", "icone", "fixe")
+
+    Set ws = ActiveSheet
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+
+    ' Définir un chemin temporaire pour exporter l'image avant de la mettre dans la note
+    tempPath = Environ("TEMP") & "\img_temp_excel_vba.jpg"
+
+    ' IMPORTANT : On boucle à l'envers car on va supprimer les images d'origine
+    For i = ws.Shapes.Count To 1 Step -1
+        Set shp = ws.Shapes(i)
+        
+        ' Traiter uniquement les images
+        If shp.Type = msoPicture Or shp.Type = msoLinkedPicture Then
+            
+            ' ---- Lire le texte de remplacement ----
+            On Error Resume Next
+            altText = shp.AlternativeText
+            On Error GoTo 0
+            
+            ' ---- Vérifier si le texte contient un mot-clé d'exclusion ----
+            skipImage = False
+            For Each motCle In exclu
+                If InStr(1, LCase(altText), LCase(motCle)) > 0 Then
+                    skipImage = True
+                    Exit For
+                End If
+            Next motCle
+
+            ' ---- Si non exclue, on la convertit en Note ----
+            If Not skipImage Then
+                On Error Resume Next
+                Set rngOrigine = shp.TopLeftCell
+                On Error GoTo 0
+
+                If Not rngOrigine Is Nothing Then
+                    If rngOrigine.MergeCells Then
+                        Set cell = rngOrigine.MergeArea
+                    Else
+                        Set cell = rngOrigine
+                    End If
+
+                    ' 1. Exporter l'image via la création d'un graphique temporaire
+                    shp.Copy
+                    DoEvents ' Laisser le temps au presse-papier de Windows de réagir
+                    
+                    Set chtObj = ws.ChartObjects.Add(0, 0, shp.Width, shp.Height)
+                    With chtObj
+                        .ShapeRange.Line.Visible = msoFalse ' Enlever la bordure
+                        .Chart.Paste
+                        .Chart.Export Filename:=tempPath, FilterName:="JPG"
+                        .Delete
+                    End With
+                    
+                    ' 2. Créer ou remplacer la note dans la cellule d'origine
+                    If Not cell.Comment Is Nothing Then cell.Comment.Delete
+                    Set maNote = cell.AddComment(Text:="")
+                    
+                    ' 3. Appliquer l'image en fond avec proportions verrouillées
+                    With maNote.Shape
+                        .Fill.UserPicture tempPath
+                        .LockAspectRatio = msoTrue
+                        
+                        ' Conserver la taille d'origine de l'image pour l'affichage de la note
+                        .Width = shp.Width
+                        .Height = shp.Height
+                    End With
+                    
+                    ' 4. Supprimer l'image flottante d'origine de la feuille
+                    shp.Delete
+                    
+                    ' 5. Nettoyer le fichier temporaire sur le disque
+                    On Error Resume Next
+                    Kill tempPath
+                    On Error GoTo 0
+                End If
+            End If
+        End If
+    Next i
+
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+
+End Sub
