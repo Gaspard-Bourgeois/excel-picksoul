@@ -1,0 +1,31 @@
+Sub MAJ_Affichage_Images_Groupes()
+    Dim ws As Worksheet
+    Dim shp As Shape
+    Dim cellSousImage As Range
+
+
+    Application.ScreenUpdating = False
+    
+    Set ws = ActiveSheet
+
+    For Each shp In ws.Shapes
+        ' Vérifie si la forme est une image
+        If shp.Type = msoPicture Then
+            On Error Resume Next
+            Set cellSousImage = ws.Range(shp.TopLeftCell.Address)
+            On Error GoTo 0
+            
+            If Not cellSousImage Is Nothing Then
+                ' Masque ou affiche l’image selon la visibilité de la cellule
+                If cellSousImage.EntireRow.Hidden Or cellSousImage.EntireColumn.Hidden Then
+                    shp.Visible = msoFalse
+                Else
+                    shp.Visible = msoTrue
+                End If
+            End If
+        End If
+    Next shp
+
+
+    Application.ScreenUpdating = True
+End Sub
