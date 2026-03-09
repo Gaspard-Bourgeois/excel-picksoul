@@ -1,0 +1,67 @@
+Sub Sortir_image_de_la_note()
+    Dim ws As Worksheet
+    Dim cmt As Comment
+    Dim shp As Shape
+    Dim cell As Range
+    Dim ratioImg As Double
+    Dim cellWidth As Double, cellHeight As Double
+    Dim newWidth As Double, newHeight As Double
+    Dim margeGauche As Double, margeHaut As Double
+
+    Set ws = ActiveSheet
+    Application.ScreenUpdating = False
+
+    ' On boucle sur toutes les cellules contenant une note (commentaire)
+    For Each cmt In ws.Comments
+        Set cell = cmt.Parent ' La cellule qui contient la note
+        
+        ' 1. Préparer la note pour la capture (enlever bordures/ombres pour une image propre)
+        With cmt.Shape
+            .Visible = msoTrue
+            .Line.Visible = msoFalse
+            .Shadow.Visible = msoFalse
+            ' Copier l'apparence de la forme
+            .CopyPicture Appearance:=xlScreen, Format:=xlPicture
+        End With
+
+        ' 2. Coller l'image sur la feuille
+        ws.Paste Destination:=cell
+        Set shp = ws.Shapes(ws.Shapes.Count) ' Récupère l'image fraîchement collée
+
+        ' 3. Redimensionner l'image selon ta logique d'origine (90% de la cellule)
+        If cell.MergeCells Then
+            cellWidth = cell.MergeArea.Width
+            cellHeight = cell.MergeArea.Height
+        Else
+            cellWidth = cell.Width
+            cellHeight = cell.Height
+        End If
+
+        ratioImg = shp.Width / shp.Height
+
+        ' Calcul des dimensions proportionnelles
+        If cellWidth / cellHeight > ratioImg Then
+            newHeight = cellHeight * 0.9
+            newWidth = newHeight * ratioImg
+        Else
+            newWidth = cellWidth * 0.9
+            newHeight = newWidth / ratioImg
+        End If
+
+        ' Appliquer les dimensions et le centrage
+        With shp
+            .LockAspectRatio = msoTrue
+            .Width = newWidth
+            .Height = newHeight
+            .Left = cell.Left + (cellWidth - .Width) / 2
+            .Top = cell.Top + (cellHeight - .Height) / 2
+            .Placement = xlMoveAndSize
+        End With
+
+        ' 4. Supprimer la note originale
+        cmt.Delete
+    Next cmt
+
+    Application.ScreenUpdating = True
+    MsgBox "Les images ont été extraites des notes et replacées dans les cellules.", vbInformation
+End Sub
