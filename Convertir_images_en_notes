@@ -1,4 +1,4 @@
-Sub Convertir_images_en_notes()
+Sub Convertir_images_en_notes_V2()
     Dim ws As Worksheet
     Dim shp As Shape
     Dim rngOrigine As Range
@@ -11,30 +11,29 @@ Sub Convertir_images_en_notes()
     Dim chtObj As ChartObject
     Dim maNote As Comment
     Dim i As Long
+    Dim ratioImg As Double
+    Dim cibleLargeur As Double
 
-    ' Liste des mots-clés à chercher dans le texte de remplacement
+    ' 1. Calcul de la largeur cible (1/3 de la zone d'affichage d'Excel)
+    cibleLargeur = ActiveWindow.UsableWidth / 3
+
     exclu = Array("skip", "noresize", "logo", "icone", "fixe")
 
     Set ws = ActiveSheet
     Application.ScreenUpdating = False
-    Application.EnableEvents = False
 
-    ' Définir un chemin temporaire pour exporter l'image avant de la mettre dans la note
-    tempPath = Environ("TEMP") & "\img_temp_excel_vba.jpg"
+    tempPath = Environ("TEMP") & "\temp_img.jpg"
 
-    ' IMPORTANT : On boucle à l'envers car on va supprimer les images d'origine
     For i = ws.Shapes.Count To 1 Step -1
         Set shp = ws.Shapes(i)
         
-        ' Traiter uniquement les images
         If shp.Type = msoPicture Or shp.Type = msoLinkedPicture Then
             
-            ' ---- Lire le texte de remplacement ----
+            altText = ""
             On Error Resume Next
             altText = shp.AlternativeText
             On Error GoTo 0
             
-            ' ---- Vérifier si le texte contient un mot-clé d'exclusion ----
             skipImage = False
             For Each motCle In exclu
                 If InStr(1, LCase(altText), LCase(motCle)) > 0 Then
@@ -43,58 +42,55 @@ Sub Convertir_images_en_notes()
                 End If
             Next motCle
 
-            ' ---- Si non exclue, on la convertit en Note ----
             If Not skipImage Then
-                On Error Resume Next
                 Set rngOrigine = shp.TopLeftCell
-                On Error GoTo 0
+                Set cell = IIf(rngOrigine.MergeCells, rngOrigine.MergeArea, rngOrigine)
+                
+                ' Calcul du ratio de l'image d'origine
+                ratioImg = shp.Height / shp.Width
 
-                If Not rngOrigine Is Nothing Then
-                    If rngOrigine.MergeCells Then
-                        Set cell = rngOrigine.MergeArea
-                    Else
-                        Set cell = rngOrigine
-                    End If
+                ' --- Exportation Fiabilisée ---
+                shp.CopyPicture Appearance:=xlScreen, Format:=xlPicture
+                
+                ' Création d'un graphique temporaire aux dimensions de l'image
+                Set chtObj = ws.ChartObjects.Add(0, 0, shp.Width, shp.Height)
+                With chtObj
+                    .Border.LineStyle = xlNone
+                    .Chart.Paste
+                    
+                    ' Petite pause pour éviter le fond blanc (laisse le temps au collage de finir)
+                    DoEvents
+                    
+                    .Chart.Export Filename:=tempPath, FilterName:="JPG"
+                    .Delete
+                End With
+                ' ------------------------------
 
-                    ' 1. Exporter l'image via la création d'un graphique temporaire
-                    shp.Copy
-                    DoEvents ' Laisser le temps au presse-papier de Windows de réagir
+                ' Création de la Note
+                If Not cell.Comment Is Nothing Then cell.Comment.Delete
+                Set maNote = cell.AddComment(Text:="")
+                
+                With maNote.Shape
+                    ' Verrouillage du ratio
+                    .LockAspectRatio = msoTrue
                     
-                    Set chtObj = ws.ChartObjects.Add(0, 0, shp.Width, shp.Height)
-                    With chtObj
-                        .ShapeRange.Line.Visible = msoFalse ' Enlever la bordure
-                        .Chart.Paste
-                        .Chart.Export Filename:=tempPath, FilterName:="JPG"
-                        .Delete
-                    End With
+                    ' Appliquer l'image en fond
+                    .Fill.UserPicture tempPath
                     
-                    ' 2. Créer ou remplacer la note dans la cellule d'origine
-                    If Not cell.Comment Is Nothing Then cell.Comment.Delete
-                    Set maNote = cell.AddComment(Text:="")
-                    
-                    ' 3. Appliquer l'image en fond avec proportions verrouillées
-                    With maNote.Shape
-                        .Fill.UserPicture tempPath
-                        .LockAspectRatio = msoTrue
-                        
-                        ' Conserver la taille d'origine de l'image pour l'affichage de la note
-                        .Width = shp.Width
-                        .Height = shp.Height
-                    End With
-                    
-                    ' 4. Supprimer l'image flottante d'origine de la feuille
-                    shp.Delete
-                    
-                    ' 5. Nettoyer le fichier temporaire sur le disque
-                    On Error Resume Next
-                    Kill tempPath
-                    On Error GoTo 0
-                End If
+                    ' Redimensionner à 1/3 de l'écran
+                    .Width = cibleLargeur
+                    ' La hauteur s'ajuste seule si LockAspectRatio fonctionne, 
+                    ' mais on assure le coup :
+                    .Height = cibleLargeur * ratioImg
+                End With
+                
+                ' Nettoyage
+                shp.Delete
+                If Dir(tempPath) <> "" Then Kill tempPath
             End If
         End If
     Next i
 
-    Application.EnableEvents = True
     Application.ScreenUpdating = True
-
+    MsgBox "Conversion terminée !", vbInformation
 End Sub
