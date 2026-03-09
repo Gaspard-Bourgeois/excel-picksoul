@@ -1,0 +1,99 @@
+Sub PositionnerImagesDansCellules()
+    Dim ws As Worksheet
+    Dim shp As Shape
+    Dim rngOrigine As Range
+    Dim cell As Range
+    Dim ratioImg As Double
+    Dim cellWidth As Double, cellHeight As Double
+    Dim newWidth As Double, newHeight As Double
+    Dim margeGauche As Double, margeHaut As Double
+    Dim exclu As Variant
+    Dim skipImage As Boolean
+    Dim motCle As Variant
+    Dim altText As String
+
+
+    ' ?? Liste des mots-clés à chercher dans le texte de remplacement
+    exclu = Array("skip", "noresize", "logo", "icone", "fixe")
+
+
+    Set ws = ActiveSheet
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+
+
+    For Each shp In ws.Shapes
+        ' Traiter uniquement les images
+        If shp.Type = msoPicture Or shp.Type = msoLinkedPicture Then
+            
+            ' ---- Lire le texte de remplacement ----
+            On Error Resume Next
+            altText = shp.AlternativeText
+            On Error GoTo 0
+            
+            ' ---- Vérifier si le texte contient un mot-clé d'exclusion ----
+            skipImage = False
+            For Each motCle In exclu
+                If InStr(1, LCase(altText), LCase(motCle)) > 0 Then
+                    skipImage = True
+                    Exit For
+                End If
+            Next motCle
+
+
+            ' ---- Si non exclue, on la redimensionne ----
+            If Not skipImage Then
+                On Error Resume Next
+                Set rngOrigine = shp.TopLeftCell
+                On Error GoTo 0
+
+
+                If Not rngOrigine Is Nothing Then
+                    If rngOrigine.MergeCells Then
+                        Set cell = rngOrigine.MergeArea
+                    Else
+                        Set cell = rngOrigine
+                    End If
+
+
+                    ' Dimensions cellule
+                    cellWidth = cell.Width
+                    cellHeight = cell.Height
+                    ratioImg = shp.Width / shp.Height
+
+
+                    ' Redimensionnement proportionnel
+                    If cellWidth / cellHeight > ratioImg Then
+                        newHeight = cellHeight * 0.9
+                        newWidth = newHeight * ratioImg
+                    Else
+                        newWidth = cellWidth * 0.9
+                        newHeight = newWidth / ratioImg
+                    End If
+
+
+                    ' Appliquer les dimensions
+                    shp.LockAspectRatio = msoFalse
+                    shp.Width = newWidth
+                    shp.Height = newHeight
+
+
+                    ' Centrage
+                    margeGauche = cell.Left + (cellWidth - shp.Width) / 2
+                    margeHaut = cell.Top + (cellHeight - shp.Height) / 2
+                    shp.Left = margeGauche
+                    shp.Top = margeHaut
+
+
+                    ' Lier à la cellule
+                    shp.Placement = xlMoveAndSize
+                End If
+            End If
+        End If
+    Next shp
+
+
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+
+End Sub
