@@ -1,3 +1,4 @@
+
 Sub Sortir_image_de_la_note()
     Dim ws As Worksheet
     Dim cmt As Comment
@@ -63,5 +64,5 @@ Sub Sortir_image_de_la_note()
     Next cmt
 
     Application.ScreenUpdating = True
-    MsgBox "Les images ont été extraites des notes et replacées dans les cellules.", vbInformation
+    
 End Sub
