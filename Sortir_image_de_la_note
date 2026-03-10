@@ -9,50 +9,58 @@ Sub Sortir_image_de_la_note()
     Dim i As Long
     Dim t As Single
     Dim tentatives As Integer
+    Dim zoomActuel As Integer
 
     Set ws = ActiveSheet
+    
+    ' SAUVEGARDE DU ZOOM ET PASSAGE À 100% (Crucial pour la fidélité de CopyPicture)
+    zoomActuel = ActiveWindow.Zoom
+    ActiveWindow.Zoom = 100
+    
     Application.ScreenUpdating = False
 
-    ' CORRECTION 1 : Boucler à l'envers (Step -1) car on supprime des éléments de la collection
+    ' On boucle à l'envers car on supprime des éléments
     For i = ws.Comments.Count To 1 Step -1
         Set cmt = ws.Comments(i)
-        Set cell = cmt.Parent ' La cellule qui contient la note
+        Set cell = cmt.Parent
         
-        ' 1. Préparer la note pour la capture
         With cmt.Shape
             .Visible = msoTrue
             .Line.Visible = msoFalse
             .Shadow.Visible = msoFalse
-            ' Copier l'apparence de la forme
-            .CopyPicture Appearance:=xlScreen, Format:=xlPicture
+            
+            ' --- NOUVEAU : RÉINITIALISER LE RATIO D'ORIGINE ---
+            ' On s'assure que la forme du commentaire est aux bonnes proportions avant copie
+            .LockAspectRatio = msoFalse
+            ' On ne peut pas utiliser ScaleHeight sur un Comment.Shape facilement, 
+            ' mais on peut forcer le "Ajuster à la taille du texte" qui réinitialise souvent le cadre
+            .TextFrame.AutoSize = True 
+            
+            ' On capture l'image
+            .CopyPicture Appearance:=xlPrinter, Format:=xlPicture ' xlPrinter est souvent plus précis
         End With
 
-        ' CORRECTION 2 : Pause pour laisser le presse-papier de Windows charger l'image
+        ' Pause pour le presse-papier
         t = Timer: Do While Timer < t + 0.3: DoEvents: Loop
 
-        ' CORRECTION 3 : Boucle de sécurité (Retry) pour le Paste
+        ' Boucle de sécurité pour le Paste
         tentatives = 0
         On Error Resume Next
         Do
             Err.Clear
             ws.Paste Destination:=cell
-            If Err.Number = 0 Then Exit Do ' Le collage a réussi, on sort de la boucle
-            
+            If Err.Number = 0 Then Exit Do
             tentatives = tentatives + 1
-            t = Timer: Do While Timer < t + 0.2: DoEvents: Loop ' On attend encore un peu
+            t = Timer: Do While Timer < t + 0.2: DoEvents: Loop
         Loop While tentatives < 5
         On Error GoTo 0
         
-        ' Si ça échoue vraiment après 5 essais, on prévient mais on ne fait pas crasher la macro
-        If tentatives >= 5 Then
-            MsgBox "Impossible de coller l'image pour la cellule " & cell.Address, vbExclamation
-            GoTo SuivantCommentaire
-        End If
+        If tentatives >= 5 Then GoTo SuivantCommentaire
 
-        ' Récupère l'image fraîchement collée
+        ' Récupère l'image collée
         Set shp = ws.Shapes(ws.Shapes.Count)
 
-        ' 3. Redimensionner l'image selon la logique d'origine (90% de la cellule)
+        ' Déterminer l'espace disponible (cellule simple ou fusionnée)
         If cell.MergeCells Then
             cellWidth = cell.MergeArea.Width
             cellHeight = cell.MergeArea.Height
@@ -61,36 +69,34 @@ Sub Sortir_image_de_la_note()
             cellHeight = cell.Height
         End If
 
-        ' Protection contre la division par zéro si l'image collée est buggée
-        If shp.Height > 0 Then
-            ratioImg = shp.Width / shp.Height
+        ' --- REDIMENSIONNEMENT PROPORTIONNEL (Logique 90%) ---
+        ' On utilise le ratio de l'image collée pour ne pas la déformer
+        ratioImg = shp.Width / shp.Height
 
-            ' Calcul des dimensions proportionnelles
-            If cellWidth / cellHeight > ratioImg Then
-                newHeight = cellHeight * 0.9
-                newWidth = newHeight * ratioImg
-            Else
-                newWidth = cellWidth * 0.9
-                newHeight = newWidth / ratioImg
-            End If
-
-            ' Appliquer les dimensions et le centrage
-            With shp
-                .LockAspectRatio = msoTrue
-                .Width = newWidth
-                .Height = newHeight
-                .Left = cell.Left + (cellWidth - .Width) / 2
-                .Top = cell.Top + (cellHeight - .Height) / 2
-                .Placement = xlMoveAndSize
-            End With
+        If (cellWidth / cellHeight) > ratioImg Then
+            newHeight = cellHeight * 0.9
+            newWidth = newHeight * ratioImg
+        Else
+            newWidth = cellWidth * 0.9
+            newHeight = newWidth / ratioImg
         End If
 
-        ' 4. Supprimer la note originale
+        With shp
+            .LockAspectRatio = msoTrue
+            .Width = newWidth
+            .Height = newHeight
+            .Left = cell.Left + (cellWidth - .Width) / 2
+            .Top = cell.Top + (cellHeight - .Height) / 2
+            .Placement = xlMoveAndSize
+        End With
+
         cmt.Delete
         
 SuivantCommentaire:
     Next i
 
+    ' RÉTABLIR LE ZOOM D'ORIGINE
+    ActiveWindow.Zoom = zoomActuel
     Application.ScreenUpdating = True
-    MsgBox "Extraction des images terminée !", vbInformation
+    MsgBox "Extraction terminée avec respect des proportions !", vbInformation
 End Sub
