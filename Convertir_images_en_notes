@@ -1,12 +1,12 @@
 Sub Convertir_images_en_notes()
     Dim ws As Worksheet
     Dim shp As Shape
-    Dim rngOrigine As Range, cell As Range
+    Dim cell As Range
     Dim exclu As Variant, motCle As Variant
     Dim altText As String, tempPath As String
     Dim chtObj As ChartObject
     Dim i As Long
-    Dim ratioImg As Double, cibleLargeur As Double
+    Dim cibleLargeur As Double
     Dim t As Double
 
     ' Largeur : 1/3 de la fenêtre Excel
@@ -16,7 +16,6 @@ Sub Convertir_images_en_notes()
     Set ws = ActiveSheet
     tempPath = Environ("TEMP") & "\temp_note_img.jpg"
 
-    ' On désactive le rafraîchissement pour la rapidité
     Application.ScreenUpdating = False
 
     For i = ws.Shapes.Count To 1 Step -1
@@ -34,32 +33,29 @@ Sub Convertir_images_en_notes()
             Next
 
             If Not skip Then
-                Set rngOrigine = shp.TopLeftCell
-                Set cell = IIf(rngOrigine.MergeCells, rngOrigine.MergeArea, rngOrigine)
-                ratioImg = shp.Height / shp.Width
-
-                ' --- ÉTAPE CRITIQUE : COPIE ET PAUSE ---
+                ' --- PRÉPARATION DU RATIO ---
+                ' On réinitialise temporairement la taille pour obtenir le ratio d'origine exact
+                shp.ScaleHeight 1, msoTrue
+                shp.ScaleWidth 1, msoTrue
+                
+                Set cell = shp.TopLeftCell.MergeArea
+                
+                ' Exportation via Graphique
                 shp.CopyPicture Appearance:=xlScreen, Format:=xlPicture
                 
-                ' Création du graphique
+                ' On crée le graphique aux dimensions EXACTES de l'image réinitialisée
                 Set chtObj = ws.ChartObjects.Add(0, 0, shp.Width, shp.Height)
                 With chtObj
+                    .Select
                     .Border.LineStyle = xlNone
-                    .Activate ' Obligatoire sur certaines versions
                     .Chart.Paste
                     
-                    ' PAUSE DE SÉCURITÉ (1 seconde)
-                    ' On laisse le temps à Windows de dessiner l'image dans le graphique
-                    t = Timer
-                    Do While Timer < t + 1
-                        DoEvents
-                    Loop
+                    ' Petite pause pour le rendu
+                    t = Timer: Do While Timer < t + 0.2: DoEvents: Loop
                     
-                    ' Exportation
                     .Chart.Export Filename:=tempPath, FilterName:="JPG"
                     .Delete
                 End With
-                ' ---------------------------------------
 
                 ' Création de la Note
                 If Not cell.Comment Is Nothing Then cell.Comment.Delete
@@ -67,9 +63,10 @@ Sub Convertir_images_en_notes()
                 
                 With cell.Comment.Shape
                     .Fill.UserPicture tempPath
-                    .LockAspectRatio = msoTrue
-                    .Width = cibleLargeur
-                    ' La hauteur suit automatiquement grâce au ratio verrouillé
+                    ' On force le verrouillage du ratio avant de redimensionner
+                    .LockAspectRatio = msoTrue 
+                    .Width = cibleLargeur 
+                    ' La hauteur se calcule désormais proportionnellement au fichier JPG exporté
                 End With
                 
                 ' Nettoyage
@@ -80,4 +77,5 @@ Sub Convertir_images_en_notes()
     Next i
 
     Application.ScreenUpdating = True
+    MsgBox "Conversion terminée !", vbInformation
 End Sub
