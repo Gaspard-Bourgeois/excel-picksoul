@@ -1,0 +1,51 @@
+# =========================================================================
+# Paramètres pour analyseTemperatureExcel.py
+# =========================================================================
+
+# --- Filtrage des voies ---
+# Une voie est ignorée si elle contient une valeur "-OVER" (dépassement de
+# capteur), ou si son amplitude (max - min) sur l'ensemble du fichier est
+# inférieure ou égale à CH_ignore_dT (voie jugée non pertinente).
+CH_ignore_dT: 20
+
+# --- Rognage temporel début/fin ---
+# Rogne la portion initiale/finale des courbes durant laquelle AUCUNE voie
+# ne s'écarte de plus de time_ignore_dT (°C) de sa valeur de départ/arrivée.
+time_ignore_dT: 5
+
+# --- Seuil de montée ---
+seuil_montant_T: 150
+# "first" -> instant où la PREMIÈRE voie dépasse seuil_montant_T
+# "last"  -> instant où la DERNIÈRE voie dépasse seuil_montant_T
+seuil_montant_first_or_last: first
+
+# --- Seuil de descente ---
+seuil_descente_T: 150
+# "first" -> instant où la PREMIÈRE voie repasse sous seuil_descente_T
+# "last"  -> instant où la DERNIÈRE voie repasse sous seuil_descente_T
+seuil_descente_first_or_last: last
+
+# --- Fenêtres des graphiques de zoom ---
+# Demi-amplitude en °C (axe Y) et demi-fenêtre en secondes (axe X),
+# centrées respectivement sur seuil_montant_T/instant de montée et sur
+# seuil_descente_T/instant de descente.
+graphique_montant_dT: 30
+graphique_montant_dt: 300
+graphique_descente_dT: 30
+graphique_descente_dt: 300
+
+# --- Sortie ---
+# Nom de sortie = <nom_fichier_excel>_<suffixe>.<format_image>
+suffixe: Analyse
+format_image: png
+dpi: 150
+figure_taille: [14, 8]
+
+# --- Lecture du fichier Excel ---
+# Nom de la feuille à lire (null = première feuille du classeur)
+feuille: null
+# Cellule du titre du graphique : libellé recherché en colonne A, valeur
+# lue dans la colonne titre_graphique_col (3 = colonne C, comme dans le
+# fichier d'exemple SMARTDAC+ fourni : "Batch No." | | <titre>)
+titre_graphique_label: "Batch No."
+titre_graphique_col: 3
