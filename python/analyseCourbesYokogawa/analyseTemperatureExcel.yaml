@@ -8,44 +8,55 @@
 # inférieure ou égale à CH_ignore_dT (voie jugée non pertinente).
 CH_ignore_dT: 20
 
-# --- Rognage temporel début/fin ---
-# Rogne la portion initiale/finale des courbes durant laquelle AUCUNE voie
-# ne s'écarte de plus de time_ignore_dT (°C) de sa valeur de départ/arrivée.
-time_ignore_dT: 5
+# --- Courbe de référence ---
+# Utilisée pour détecter les seuils de montée/maintien/refroidissement.
+# Les AUTRES voies retenues sont tracées en gris sur tous les graphiques.
+# "premiere" = première voie non filtrée, dans l'ordre des colonnes du
+#              fichier Excel (valeur par défaut).
+# "moyenne"  = moyenne, à chaque instant, de toutes les voies retenues.
+# ou un nom de voie explicite, ex. "CH0003".
+courbe_reference: premiere
 
-# --- Seuil de montée ---
-seuil_montant_T: 150
-# "first" -> instant où la PREMIÈRE voie dépasse seuil_montant_T
-# "last"  -> instant où la DERNIÈRE voie dépasse seuil_montant_T
-seuil_montant_first_or_last: first
+# --- Montée ---
+# t1 = premier instant où la courbe de référence dépasse temp_montee_basse
+# t2 = premier instant, après t1, où elle dépasse temp_montee_haute
+# durée de montée = t2 - t1
+temp_montee_basse: 100
+temp_montee_haute: 200
 
-# --- Seuil de descente ---
-seuil_descente_T: 150
-# "first" -> instant où la PREMIÈRE voie repasse sous seuil_descente_T
-# "last"  -> instant où la DERNIÈRE voie repasse sous seuil_descente_T
-seuil_descente_first_or_last: last
+# --- Maintien ---
+# t3 = premier instant, après t2, où la courbe dépasse temp_maintien_debut
+# t4 = premier instant, après t3, où elle repasse sous temp_maintien_fin
+# durée de maintien = t4 - t3 ; température maximale = max entre t3 et t4
+temp_maintien_debut: 200
+temp_maintien_fin: 200
 
-# --- Fenêtres des graphiques de zoom ---
-# Demi-amplitude en °C (axe Y) et demi-fenêtre en secondes (axe X),
-# centrées respectivement sur seuil_montant_T/instant de montée et sur
-# seuil_descente_T/instant de descente.
-graphique_montant_dT: 30
-graphique_montant_dt: 300
-graphique_descente_dT: 30
-graphique_descente_dt: 300
+# --- Refroidissement ---
+# t5 = premier instant, après t4, où la courbe repasse sous
+# temp_refroidissement. Si laissé à "null", prend par défaut la valeur de
+# temp_montee_haute.
+# vitesse de refroidissement = (temp_maintien_fin - temp_refroidissement) / durée(t4->t5), en °C/min
+temp_refroidissement: null
 
-# --- Sortie ---
-# Nom de sortie = <nom_fichier_excel>_<suffixe>.<format_image>
+# --- Fenêtres de zoom (appliquées aux 3 zooms : montée / maintien / refroidissement) ---
+zoom_marge_temperature: 20   # °C, marge ajoutée en haut/bas de chaque zoom
+zoom_marge_temps: 5          # minutes, marge ajoutée avant/après chaque zoom
+
+# --- Sorties ---
+# Image     : <nom_fichier_excel>_<suffixe>.<format_image>
+# Résultats : <nom_fichier_excel>_<suffixe_resultats>.<format_resultats>
+# (formalisme strict imposé, voir hypothèse 8 en tête du script)
 suffixe: Analyse
+suffixe_resultats: Resultats
 format_image: png
+format_resultats: txt
 dpi: 150
-figure_taille: [14, 8]
+figure_taille: [15, 8]
 
 # --- Lecture du fichier Excel ---
 # Nom de la feuille à lire (null = première feuille du classeur)
 feuille: null
-# Cellule du titre du graphique : libellé recherché en colonne A, valeur
-# lue dans la colonne titre_graphique_col (3 = colonne C, comme dans le
-# fichier d'exemple SMARTDAC+ fourni : "Batch No." | | <titre>)
-titre_graphique_label: "Batch No."
+# Colonne (index, 1 = A) où lire la valeur de titre_graphique, sur la ligne
+# dont le libellé en colonne A vaut "Batch No." (3 = colonne C, comme dans
+# le fichier d'exemple SMARTDAC+ fourni)
 titre_graphique_col: 3
