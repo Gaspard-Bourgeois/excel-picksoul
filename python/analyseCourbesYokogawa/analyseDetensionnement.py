@@ -6,10 +6,11 @@ Analyse un (ou plusieurs) fichier(s) Excel d'enregistreur de température
 image regroupant :
   - un graphique gauche (pleine hauteur) montrant l'ensemble des voies
     retenues après filtrage (grisées),
-  - 4 graphiques à droite, un par phase du cycle (palier 1, palier 2,
-    refroidissement palier 3, sortie finale palier 4), chacun annoté des
-    points d'intérêt qui le concernent (avec la voie à l'origine de
-    chaque point),
+  - 10 petits graphiques à droite (répartis sur 2 colonnes), un par
+    sous-phase du cycle : montée 1, regroupement 1, maintien 1, montée 2,
+    regroupement 2, maintien 2, sortie 2, descente 3, regroupement 3,
+    descente 4 — chaque sous-phase est isolée dans son propre graphique
+    pour ne pas surcharger un même graphique avec trop d'informations,
 ainsi qu'un second fichier texte contenant les valeurs de synthèse du
 cycle (température initiale, vitesses de montée/descente, durées de
 regroupement/maintien/sortie, température de maintien 2), au format
@@ -60,7 +61,7 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
 5. Détection des instants (recherche séquentielle ; chaque étape reprend
    la recherche, sur TOUTES les voies, à partir de l'instant trouvé à
    l'étape précédente) :
-     - t0 (début montée) = 1ère voie (la plus rapide) à franchir (montant)
+     - t0 (début montée) = 1ère voie à franchir (montant)
        température initiale + `temp_delta_ambiant`
      - t1 (fin montée 1) = 1ère voie à franchir (montant)
        `temp_palier_1` - `temp_delta_1` -> vitesse de montée 1 (°C/h)
@@ -98,28 +99,27 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
    suivantes ne sont pas calculées (valeurs "N/A" dans les sorties).
 
 6. Fenêtres de zoom : deux paramètres uniques `zoom_marge_temperature`
-   (°C) et `zoom_marge_temps` (minutes), appliqués aux 4 graphiques de
-   droite, ajoutés de part et d'autre de la plage utile de chaque phase.
+   (°C) et `zoom_marge_temps` (minutes), appliqués aux 10 graphiques de
+   droite, ajoutés de part et d'autre de la plage utile de chaque
+   sous-phase.
 
 7. Fichier de sortie image : `<nom_fichier_excel>_<suffixe>.png`.
    Fichier de sortie résultats : `<nom_fichier_excel>_<suffixe_resultats>.txt`.
 
-8. Formalisme STRICT du fichier de résultats (imposé, reproduit tel quel,
-   y compris la formulation des libellés fournis en exemple par
-   l'utilisateur) : 12 lignes de libellés puis 12 lignes de valeurs, dans
-   cet ordre :
+8. Formalisme STRICT du fichier de résultats (imposé, reproduit tel quel) :
+   12 lignes de libellés puis 12 lignes de valeurs, dans cet ordre :
        température initiale                    (tabulation AVANT la valeur)
        vitesse de montée 1                      (avant)
        durée de regroupement 1                  (avant)
-       durée du maintient 1                     (avant)
+       durée du maintien 1                      (avant)
        Vitesse de montée 2                      (APRÈS la valeur)
        Durée de regroupement 2                  (après)
-       Température de maintient 2               (après)
-       Durée du maintient 2                     (après)
+       Température de maintien 2                (après)
+       Durée du maintien 2                      (après)
        Durée de la sortie 2                     (après)
        Vitesse de descente 3                    (après)
        Durée du regroupement 3                  (avant)
-       vitese de descente 4                     (avant)
+       vitesse de descente 4                    (avant)
    soit, pour les valeurs (exemple donné) :
        \t12°C
        \t20°C/h
@@ -134,7 +134,9 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
        \t2min
        \t10°C/h
    Le fichier final concatène le bloc des 12 libellés puis le bloc des 12
-   valeurs, chacun respectant la position de tabulation indiquée.
+   valeurs, chacun respectant la position de tabulation indiquée. [Les
+   fautes de frappe "maintient"/"vitese" d'une itération précédente ont
+   été corrigées en "maintien"/"vitesse" à la demande de l'utilisateur.]
 
 9. Température initiale : puisqu'il n'y a plus de voie de référence fixe
    (voir hypothèse 4), la température initiale est la MOYENNE des voies
@@ -146,12 +148,14 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
     montée/descente sont exprimées en °C/h.
 
 11. Couleurs : chaque point d'intérêt (t0 à t10) a sa propre couleur fixe,
-    réutilisée à l'identique sur tous les graphiques (trait de seuil,
-    trait vertical, marqueur, texte d'annotation). Les annotations sont
+    réutilisée à l'identique sur tous les graphiques. Les annotations sont
     posées sur fond blanc semi-opaque, avec le nom de la voie à l'origine
     du point, et leur position (au-dessus/en dessous, à gauche/à droite)
     est choisie automatiquement selon la position du point dans la
-    fenêtre affichée, pour rester à l'intérieur du graphique.
+    fenêtre affichée. Chaque sous-phase (montée, regroupement, maintien,
+    sortie, descente) est isolée dans son propre petit graphique (2 points
+    au plus par graphique, 3 pour le maintien 2 qui inclut le marqueur de
+    température maximale) afin d'éviter la superposition des étiquettes.
 -------------------------------------------------------------------------
 """
 
@@ -510,6 +514,8 @@ def fmt_vitesse_h(x):
 
 
 def _texte_point(instant, valeur, nom_voie):
+    if instant is None or valeur is None:
+        return None
     base = f"{instant.strftime('%H:%M:%S')}\n{fmt_temperature(valeur)}"
     return f"{base}\n({nom_voie})" if nom_voie else base
 
@@ -539,6 +545,24 @@ LABELS_POINTS = {
     't10': 'Fin descente 4',
 }
 
+# Chaque sous-phase = (clé_debut, clé_fin, nom_affiché, fonction de détail
+# affichée dans le titre du graphique correspondant). Une sous-phase par
+# graphique : c'est ce qui évite de mélanger montée et maintien dans un
+# même graphique (voir hypothèse 11).
+_SOUS_PHASES = [
+    ('t0', 't1', "Montée 1", lambda c: f"vitesse {fmt_vitesse_h(c['vitesse_montee_1'])}"),
+    ('t1', 't2', "Regroupement 1", lambda c: f"durée {fmt_duree(c['duree_regroupement_1_min'])}"),
+    ('t2', 't3', "Maintien 1", lambda c: f"durée {fmt_duree(c['duree_maintien_1_min'])}"),
+    ('t3', 't4', "Montée 2", lambda c: f"vitesse {fmt_vitesse_h(c['vitesse_montee_2'])}"),
+    ('t4', 't5', "Regroupement 2", lambda c: f"durée {fmt_duree(c['duree_regroupement_2_min'])}"),
+    ('t5', 't6', "Maintien 2", lambda c: (f"durée {fmt_duree(c['duree_maintien_2_min'])}, "
+                                            f"max {fmt_temperature(c['temp_maintien_2'])}")),
+    ('t6', 't7', "Sortie 2", lambda c: f"durée {fmt_duree(c['duree_sortie_2_min'])}"),
+    ('t7', 't8', "Descente 3", lambda c: f"vitesse {fmt_vitesse_h(c['vitesse_descente_3'])}"),
+    ('t8', 't9', "Regroupement 3", lambda c: f"durée {fmt_duree(c['duree_regroupement_3_min'])}"),
+    ('t9', 't10', "Descente 4", lambda c: f"vitesse {fmt_vitesse_h(c['vitesse_descente_4'])}"),
+]
+
 
 def _tracer_courbes_fenetre(ax, dates, voies, t_min, t_max):
     """Trace, dans la fenêtre [t_min, t_max], toutes les voies retenues en
@@ -560,9 +584,10 @@ def _annoter_point(ax, instant, valeur, texte, couleur, x_range, y_range, label=
     """Place un marqueur + une étiquette pour un point d'intérêt. La
     position de l'étiquette (haut/bas, gauche/droite) est choisie
     automatiquement selon la position du point dans (x_range, y_range),
-    pour rester à l'intérieur du graphique. x_range peut contenir des
-    datetime (fenêtres calculées manuellement) ou des floats matplotlib
-    (ex. ax.get_xlim()) : les deux sont normalisés avant comparaison."""
+    pour rester à l'intérieur du graphique et limiter le risque de
+    chevauchement entre étiquettes voisines. x_range peut contenir des
+    datetime ou des floats matplotlib (ex. ax.get_xlim()) : les deux sont
+    normalisés avant comparaison."""
     def _num(x):
         return mdates.date2num(x) if isinstance(x, datetime) else x
 
@@ -586,9 +611,11 @@ def _annoter_point(ax, instant, valeur, texte, couleur, x_range, y_range, label=
 def _tracer_zoom_phase(ax, dates, voies, config, points, titre):
     """points : liste de tuples (instant, valeur, couleur, label, ligne_horizontale, texte)."""
     if not points or any(p[0] is None or p[1] is None for p in points):
-        ax.set_title(f"{titre} : seuils non atteints", fontweight='bold', pad=8)
+        ax.set_title(f"{titre} : seuils non atteints", fontweight='bold', pad=8, fontsize=9)
         ax.text(0.5, 0.5, "Seuils non franchis", ha='center', va='center',
-                 transform=ax.transAxes, color='dimgray')
+                 transform=ax.transAxes, color='dimgray', fontsize=8)
+        ax.set_xticks([])
+        ax.set_yticks([])
         return
 
     marge_t = timedelta(minutes=config['zoom_marge_temps'])
@@ -612,19 +639,28 @@ def _tracer_zoom_phase(ax, dates, voies, config, points, titre):
     for lbl in ax.get_xticklabels():
         lbl.set_rotation(20)
         lbl.set_ha('right')
-    ax.set_ylabel("Température (°C)")
+    ax.tick_params(labelsize=7)
+    ax.set_ylabel("T (°C)", fontsize=8)
     ax.grid(True, alpha=0.3)
-    ax.set_title(titre, fontweight='bold', pad=8)
+    ax.set_title(titre, fontweight='bold', pad=8, fontsize=9)
+
+
+def _construire_points_phase(cycle, cle_debut, cle_fin):
+    points = []
+    for cle in (cle_debut, cle_fin):
+        instant = cycle[cle]
+        seuil = cycle[f'seuil_{cle}']
+        texte = _texte_point(instant, seuil, cycle[f'voie_{cle}'])
+        points.append((instant, seuil, COULEURS_POINTS[cle], LABELS_POINTS[cle], True, texte))
+    return points
 
 
 def tracer_graphique(fichier, titre, dates, voies, cycle, config):
     fig = plt.figure(figsize=tuple(config['figure_taille']))
-    gs = fig.add_gridspec(4, 2, width_ratios=[1.4, 1], hspace=0.7, wspace=0.25)
+    n_phases = len(_SOUS_PHASES)
+    n_lignes = (n_phases + 1) // 2  # 2 colonnes de graphiques de zoom
+    gs = fig.add_gridspec(n_lignes, 3, width_ratios=[1.6, 1, 1], hspace=0.9, wspace=0.3)
     ax_gauche = fig.add_subplot(gs[:, 0])
-    ax_p1 = fig.add_subplot(gs[0, 1])
-    ax_p2 = fig.add_subplot(gs[1, 1])
-    ax_p3 = fig.add_subplot(gs[2, 1])
-    ax_p4 = fig.add_subplot(gs[3, 1])
 
     # --- Graphique global (gauche, pleine hauteur) ---
     premiere_grise = True
@@ -655,77 +691,33 @@ def tracer_graphique(fichier, titre, dates, voies, cycle, config):
         lbl.set_rotation(30)
         lbl.set_ha('right')
     ax_gauche.grid(True, alpha=0.3)
-    ax_gauche.legend(loc='upper left', ncol=3, fontsize=6, framealpha=0.9)
+    ax_gauche.legend(loc='upper left', ncol=2, fontsize=6.5, framealpha=0.9)
 
-    # --- Phase 1 : palier 1 (montée / regroupement / maintien) ---
-    titre_p1 = (f"Palier 1 — montée {fmt_vitesse_h(cycle['vitesse_montee_1'])} | "
-                f"regroup. {fmt_duree(cycle['duree_regroupement_1_min'])} | "
-                f"maintien {fmt_duree(cycle['duree_maintien_1_min'])}")
-    points_p1 = [
-        (cycle['t0'], cycle['seuil_t0'], COULEURS_POINTS['t0'], LABELS_POINTS['t0'], True,
-         _texte_point(cycle['t0'], cycle['seuil_t0'], cycle['voie_t0']) if cycle['t0'] else None),
-        (cycle['t1'], cycle['seuil_t1'], COULEURS_POINTS['t1'], LABELS_POINTS['t1'], True,
-         _texte_point(cycle['t1'], cycle['seuil_t1'], cycle['voie_t1']) if cycle['t1'] else None),
-        (cycle['t2'], cycle['seuil_t2'], COULEURS_POINTS['t2'], LABELS_POINTS['t2'], True,
-         _texte_point(cycle['t2'], cycle['seuil_t2'], cycle['voie_t2']) if cycle['t2'] else None),
-        (cycle['t3'], cycle['seuil_t3'], COULEURS_POINTS['t3'], LABELS_POINTS['t3'], True,
-         _texte_point(cycle['t3'], cycle['seuil_t3'], cycle['voie_t3']) if cycle['t3'] else None),
-    ]
-    _tracer_zoom_phase(ax_p1, dates, voies, config, points_p1, titre_p1)
+    # --- Une sous-phase par graphique, répartie sur 2 colonnes ---
+    for idx, (cle_debut, cle_fin, nom_phase, detail_fn) in enumerate(_SOUS_PHASES):
+        ligne = idx % n_lignes
+        colonne = 1 + idx // n_lignes
+        ax = fig.add_subplot(gs[ligne, colonne])
 
-    # --- Phase 2 : palier 2 (montée / regroupement / maintien / sortie) ---
-    titre_p2 = (f"Palier 2 — montée {fmt_vitesse_h(cycle['vitesse_montee_2'])} | "
-                f"regroup. {fmt_duree(cycle['duree_regroupement_2_min'])} | "
-                f"maintien {fmt_duree(cycle['duree_maintien_2_min'])} | "
-                f"sortie {fmt_duree(cycle['duree_sortie_2_min'])}")
-    points_p2 = [
-        (cycle['t4'], cycle['seuil_t4'], COULEURS_POINTS['t4'], LABELS_POINTS['t4'], True,
-         _texte_point(cycle['t4'], cycle['seuil_t4'], cycle['voie_t4']) if cycle['t4'] else None),
-        (cycle['t5'], cycle['seuil_t5'], COULEURS_POINTS['t5'], LABELS_POINTS['t5'], True,
-         _texte_point(cycle['t5'], cycle['seuil_t5'], cycle['voie_t5']) if cycle['t5'] else None),
-        (cycle['t6'], cycle['seuil_t6'], COULEURS_POINTS['t6'], LABELS_POINTS['t6'], True,
-         _texte_point(cycle['t6'], cycle['seuil_t6'], cycle['voie_t6']) if cycle['t6'] else None),
-        (cycle['t7'], cycle['seuil_t7'], COULEURS_POINTS['t7'], LABELS_POINTS['t7'], True,
-         _texte_point(cycle['t7'], cycle['seuil_t7'], cycle['voie_t7']) if cycle['t7'] else None),
-    ]
-    if cycle['instant_maintien_2'] is not None and cycle['temp_maintien_2'] is not None:
-        points_p2.append((
-            cycle['instant_maintien_2'], cycle['temp_maintien_2'], _COULEUR_MAX_MAINTIEN,
-            "Max maintien 2", True,
-            _texte_point(cycle['instant_maintien_2'], cycle['temp_maintien_2'], cycle['voie_maintien_2'])
-        ))
-    _tracer_zoom_phase(ax_p2, dates, voies, config, points_p2, titre_p2)
+        points = _construire_points_phase(cycle, cle_debut, cle_fin)
+        if nom_phase == "Maintien 2" and cycle['instant_maintien_2'] is not None \
+                and cycle['temp_maintien_2'] is not None:
+            points.append((
+                cycle['instant_maintien_2'], cycle['temp_maintien_2'], _COULEUR_MAX_MAINTIEN,
+                "Max maintien 2", True,
+                _texte_point(cycle['instant_maintien_2'], cycle['temp_maintien_2'], cycle['voie_maintien_2'])
+            ))
 
-    # --- Phase 3 : refroidissement palier 3 (descente / regroupement) ---
-    titre_p3 = (f"Refroidissement palier 3 — descente {fmt_vitesse_h(cycle['vitesse_descente_3'])} | "
-                f"regroup. {fmt_duree(cycle['duree_regroupement_3_min'])}")
-    points_p3 = [
-        (cycle['t7'], cycle['seuil_t7'], COULEURS_POINTS['t7'], LABELS_POINTS['t7'], True,
-         _texte_point(cycle['t7'], cycle['seuil_t7'], cycle['voie_t7']) if cycle['t7'] else None),
-        (cycle['t8'], cycle['seuil_t8'], COULEURS_POINTS['t8'], LABELS_POINTS['t8'], True,
-         _texte_point(cycle['t8'], cycle['seuil_t8'], cycle['voie_t8']) if cycle['t8'] else None),
-        (cycle['t9'], cycle['seuil_t9'], COULEURS_POINTS['t9'], LABELS_POINTS['t9'], True,
-         _texte_point(cycle['t9'], cycle['seuil_t9'], cycle['voie_t9']) if cycle['t9'] else None),
-    ]
-    _tracer_zoom_phase(ax_p3, dates, voies, config, points_p3, titre_p3)
+        titre_phase = f"{nom_phase} — {detail_fn(cycle)}"
+        _tracer_zoom_phase(ax, dates, voies, config, points, titre_phase)
 
-    # --- Phase 4 : sortie finale palier 4 ---
-    titre_p4 = f"Sortie finale — descente {fmt_vitesse_h(cycle['vitesse_descente_4'])}"
-    points_p4 = [
-        (cycle['t9'], cycle['seuil_t9'], COULEURS_POINTS['t9'], LABELS_POINTS['t9'], True,
-         _texte_point(cycle['t9'], cycle['seuil_t9'], cycle['voie_t9']) if cycle['t9'] else None),
-        (cycle['t10'], cycle['seuil_t10'], COULEURS_POINTS['t10'], LABELS_POINTS['t10'], True,
-         _texte_point(cycle['t10'], cycle['seuil_t10'], cycle['voie_t10']) if cycle['t10'] else None),
-    ]
-    _tracer_zoom_phase(ax_p4, dates, voies, config, points_p4, titre_p4)
-
-    fig.suptitle(titre or os.path.basename(fichier), fontsize=14, fontweight='bold', y=0.99)
-    fig.text(0.5, 0.965,
+    fig.suptitle(titre or os.path.basename(fichier), fontsize=14, fontweight='bold', y=0.995)
+    fig.text(0.5, 0.975,
               f"T° initiale (moy.) : {fmt_temperature(cycle['temp_initiale'])}   |   "
               f"T° maintien 2 (max) : {fmt_temperature(cycle['temp_maintien_2'])}",
               ha='center', fontsize=9, color='dimgray')
 
-    fig.subplots_adjust(top=0.90, bottom=0.14, left=0.06, right=0.95)
+    fig.subplots_adjust(top=0.93, bottom=0.10, left=0.05, right=0.97)
     return fig
 
 
@@ -735,20 +727,21 @@ def tracer_graphique(fichier, titre, dates, voies, cycle, config):
 
 # (position_tabulation, libellé) pour chacune des 12 valeurs, dans l'ordre.
 # 'avant' -> "\tvaleur" ; 'apres' -> "valeur\t" (reproduit exactement le
-# formalisme de l'exemple fourni par l'utilisateur).
+# formalisme de l'exemple fourni par l'utilisateur ; fautes de frappe
+# "maintient"/"vitese" corrigées en "maintien"/"vitesse").
 _FORMALISME_RESULTATS = [
     ('avant', "température initiale"),
     ('avant', "vitesse de montée 1"),
     ('avant', "durée de regroupement 1"),
-    ('avant', "durée du maintient 1"),
+    ('avant', "durée du maintien 1"),
     ('apres', "Vitesse de montée 2"),
     ('apres', "Durée de regroupement 2"),
-    ('apres', "Température de maintient 2"),
-    ('apres', "Durée du maintient 2"),
+    ('apres', "Température de maintien 2"),
+    ('apres', "Durée du maintien 2"),
     ('apres', "Durée de la sortie 2"),
     ('apres', "Vitesse de descente 3"),
     ('avant', "Durée du regroupement 3"),
-    ('avant', "vitese de descente 4"),
+    ('avant', "vitesse de descente 4"),
 ]
 
 
@@ -852,7 +845,7 @@ DEFAULTS = {
     'suffixe': 'Analyse',
     'suffixe_resultats': 'Resultats',
     'dpi': 150,
-    'figure_taille': [16, 11],
+    'figure_taille': [20, 14],
 }
 
 
