@@ -1,22 +1,26 @@
 """
+analyseHypertrempe.py
 
 Analyse un (ou plusieurs) fichier(s) Excel d'enregistreur de température
 (type SMARTDAC+, colonnes CHxxxx / CHCxxx) et génère, pour chacun, une
 image regroupant :
   - un graphique gauche (pleine hauteur) montrant l'ensemble des voies
-    retenues après filtrage,
-  - plusieurs graphiques à droites présentant les différents points d'intérêt et légende contenant les libellés de sorties (inspiré du script précédent)
+    retenues après filtrage (voies grisées, courbes "première"/"dernière"
+    surlignées),
+  - 4 graphiques à droite, un par phase du cycle (palier 1, palier 2,
+    refroidissement palier 3, sortie finale palier 4), chacun annoté des
+    points d'intérêt qui le concernent,
 ainsi qu'un second fichier texte contenant les valeurs de synthèse du
-cycle (température initiale, durée de montée, température maximale de
-maintien, durée de maintien, vitesse de refroidissement), au format imposé
-par un exemple fourni (voir hypothèse 8).
+cycle (température initiale, vitesses de montée/descente, durées de
+regroupement/maintien/sortie, température de maintien 2), au format
+imposé par un exemple fourni (voir hypothèse 8).
 
 Les paramètres se trouvent dans un fichier YAML (par défaut
 analyseHypertrempe.yaml), avec quelques surcharges possibles en ligne
 de commande pour les seuils principaux.
 
 Usage :
-    python analyseHypertrempe.pyz fichier1.xlsx fichier2.xlsx
+    python analyseHypertrempe.py fichier1.xlsx fichier2.xlsx
     (sans fichier -> traite tous les .xlsx du dossier courant, hors fichiers
     déjà suffixés)
     (paramètres absents de la ligne de commande -> lus dans
@@ -36,118 +40,127 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
    utilisées telles quelles.
 
 2. Cellule `titre_graphique` : repérée en cherchant, en colonne A, la ligne
-   dont le libellé vaut exactement "Batch No." (fixe, non paramétrable), et
-   en lisant la valeur en colonne `titre_graphique_col` (par défaut colonne
-   C, comme les autres champs "libellé / valeur" de cet en-tête).
+   dont le libellé vaut exactement "Batch No." (fixe), et en lisant la
+   valeur en colonne C (fixe également — ces deux réglages ne sont plus
+   exposés dans le YAML, à la demande explicite d'une itération
+   précédente).
 
 3. `CH_ignore_dT` : une voie est CONSERVÉE si (max - min) de ses valeurs
    sur l'ensemble du fichier est STRICTEMENT SUPÉRIEUR à `CH_ignore_dT` ;
    sinon elle est ignorée (voie trop stable / non pertinente). Une voie
-   contenant au moins une valeur de type "-OVER" (ou plus généralement
-   toute chaîne contenant "OVER") est ignorée avant même ce calcul, quelle
-   que soit son amplitude.
+   contenant au moins une valeur de type "-OVER" est ignorée avant même ce
+   calcul, quelle que soit son amplitude.
 
-4. On utilise toutes les courbes non filtrés précedemment
+4. "Première courbe" / "dernière courbe" : on utilise TOUTES les voies non
+   filtrées pour le tracé (voir hypothèse précédente sur `CH_ignore_dT`),
+   mais la détection des instants s'appuie sur DEUX voies fixes, désignées
+   par leur position dans l'ordre des colonnes du fichier Excel :
+     - la "première courbe" = la première voie retenue (première colonne
+       CHxxxx non filtrée),
+     - la "dernière courbe" = la dernière voie retenue (dernière colonne
+       CHxxxx non filtrée).
+   C'est l'interprétation retenue pour "la première/dernière courbe" du
+   cahier des charges (les instants de "regroupement" mesurent alors
+   l'écart entre le point du chargement qui chauffe/refroidit le plus vite
+   — la première voie — et celui qui chauffe/refroidit le plus lentement —
+   la dernière voie). Si une seule voie est retenue après filtrage, les
+   deux coïncident (durées de regroupement nulles).
 
-5. Détection des instants (recherche séquentielle, chaque étape reprenant
-   la recherche à partir de l'instant trouvé à l'étape précédente, pour
-   éviter de détecter un franchissement antérieur non pertinent) :
-	 - t0 (début montée) = premier intant où la première courbe dépasse (en montant)
-		la température initiale + `temp_delta_ambiant`
-		
-     - t1 (fin montée) = premier instant où la première courbe dépasse (en montant)
-       `temp_palier_1` - 'temp_delta_1', -> durée de montée 1 = t1 - t0, utilisé pour calculé la vitesse de montée en °C/h
-	   
-     - t2 (regroupement) = premier instant, après t1, où la dernière courbe dépasse (en montant)
-       `temp_palier_1` - 'temp_delta_1', -> durée de regroupement 1 = t2 - t1
-	   
-     - t3 (maintient) = premier instant, après t2, où la première courbe qui dépasse (en montant)
-       `temp_palier_1` + 'temp_delta_1', --> durée de maintien  1 = t3 - t2
-	   
-     - t4 (fin montée) = premier instant, après t3 où la première courbe dépasse (en montant)
-       `temp_palier_2` - 'temp_delta_2', -> durée de montée 2 = t4 - t3, utilisé pour calculé la vitesse de montée en °C/h
-	   
-     - t5 (maintient) = premier instant, après t4, où la première courbe qui dépasse (en montant)
-       `temp_palier_2` + 'temp_delta_2', --> durée de maintien 2 = t5 - t4, on appelle température de maitient 2 la température maximale sur cette plage
-	   
-     - t6 (sortie) = premier instant, après t5, où la dernière courbe dépasse (en descendant)
-       `temp_palier_2` - 'temp_delta_2', -> durée de sortie 2 = t6 - t5
-	   
-     - t7 (fin descente) = premier instant, après t6 où la première courbe dépasse (en descendant)
-       `temp_palier_3` + 'temp_delta_3', -> durée de decente 3 = t7 - t6, utilisé pour calculé la vitesse de descente en °C/h
-     
-	 - t8 (regroupement) = premier instant, après t7, où la dernière courbe dépasse (en descendant)
-       `temp_palier_3` - 'temp_delta_3', -> durée de regroupement 3 = t8 - t7
-	   
-     - t9 (fin descente) = premier instant, après t8 où la première courbe dépasse (en descendant)
-       `temp_palier_4`, -> durée de decente 4 = t9 - t8, utilisé pour calculé la vitesse de descente en °C/h
-     
+5. Détection des instants (recherche séquentielle sur les DEUX courbes
+   première/dernière ; chaque étape reprend la recherche à partir de
+   l'instant trouvé à l'étape précédente) :
+     - t0 (début montée) = 1ère courbe franchit (montant)
+       température initiale + `temp_delta_ambiant`
+     - t1 (fin montée 1) = 1ère courbe franchit (montant)
+       `temp_palier_1` - `temp_delta_1` -> vitesse de montée 1 (°C/h)
+       calculée entre t0 et t1
+     - t2 (regroupement 1) = dernière courbe franchit (montant) le même
+       seuil que t1 -> durée de regroupement 1 = t2 - t1
+     - t3 (maintien 1) = 1ère courbe franchit (montant)
+       `temp_palier_1` + `temp_delta_1` -> durée de maintien 1 = t3 - t2
+     - t4 (fin montée 2) = 1ère courbe franchit (montant)
+       `temp_palier_2` - `temp_delta_2` -> vitesse de montée 2 (°C/h)
+       calculée entre t3 et t4
+     - t5 (regroupement 2) = dernière courbe franchit (montant) le même
+       seuil que t4 -> durée de regroupement 2 = t5 - t4
+       [ÉTAPE AJOUTÉE : le cahier des charges ne décrivait pas
+       explicitement de palier "regroupement 2" symétrique du
+       regroupement 1, mais la liste des 12 valeurs de sortie demandées
+       (hypothèse 8) inclut une "Durée de regroupement 2" — cette étape a
+       donc été ajoutée par symétrie avec le palier 1, entre la fin de
+       montée 2 et le début du maintien 2]
+     - t6 (maintien 2) = 1ère courbe franchit (montant)
+       `temp_palier_2` + `temp_delta_2` -> durée de maintien 2 = t6 - t5 ;
+       la "température de maintien 2" est le maximum atteint, TOUTES
+       voies retenues confondues, entre t5 et t6
+     - t7 (sortie 2) = dernière courbe franchit (descendant)
+       `temp_palier_2` - `temp_delta_2` -> durée de sortie 2 = t7 - t6
+     - t8 (fin descente 3) = 1ère courbe franchit (descendant)
+       `temp_palier_3` + `temp_delta_3` -> vitesse de descente 3 (°C/h)
+       calculée entre t7 et t8
+     - t9 (regroupement 3) = dernière courbe franchit (descendant)
+       `temp_palier_3` - `temp_delta_3` -> durée de regroupement 3 = t9 - t8
+     - t10 (fin descente 4) = 1ère courbe franchit (descendant)
+       `temp_palier_4` -> vitesse de descente 4 (°C/h) calculée entre t9
+       et t10
    Tous les franchissements sont interpolés linéairement entre les deux
-   échantillons encadrants (précision sub-échantillon). Si une étape
-   n'est pas trouvée, les étapes suivantes qui en dépendent sont
-   également non calculées (valeurs "N/A" dans les sorties).
+   échantillons encadrants. Si une étape n'est pas trouvée, les étapes
+   suivantes ne sont pas calculées (valeurs "N/A" dans les sorties).
 
-6. Fenêtres de zoom : deux paramètres uniques, appliqués aux 3 zooms
-   (montée / maintien / refroidissement) :
-     - `zoom_marge_temperature` (°C) : marge ajoutée de part et d'autre de
-       la plage de températures utile de chaque zoom,
-     - `zoom_marge_temps` (minutes) : marge ajoutée de part et d'autre de
-       la plage temporelle utile de chaque zoom.
+6. Fenêtres de zoom : deux paramètres uniques `zoom_marge_temperature`
+   (°C) et `zoom_marge_temps` (minutes), appliqués aux 4 graphiques de
+   droite, ajoutés de part et d'autre de la plage utile de chaque phase.
 
-7. Fichier de sortie image : `<nom_fichier_excel_sans_extension>_<suffixe>.<format_image>`.
-   Fichier de sortie résultats : `<nom_fichier_excel_sans_extension>_<suffixe_resultats>.<format_resultats>`.
-   Les deux fichiers sont écrits dans le même dossier que le fichier Excel
-   source.
+7. Fichier de sortie image : `<nom_fichier_excel>_<suffixe>.png`.
+   Fichier de sortie résultats : `<nom_fichier_excel>_<suffixe_resultats>.txt`.
+   (les extensions ne sont plus paramétrables, voir hypothèse 2).
 
-8. Formalisme STRICT du fichier de résultats (imposé, reproduit tel quel) :
-   chaque ligne de donnée comporte une valeur et une tabulation, la
-   tabulation étant placée AVANT la valeur pour la 1ère ligne (température
-   initiale) et APRÈS la valeur pour les 4 lignes suivantes, exactement
-   comme dans l'exemple fourni :
+8. Formalisme STRICT du fichier de résultats (imposé, reproduit tel quel,
+   y compris la ponctuation/orthographe des libellés fournis en exemple) :
+   12 lignes de libellés puis 12 lignes de valeurs, dans cet ordre :
+       température initiale                    (tabulation AVANT la valeur)
+       vitesse de montée 1                      (avant)
+       durée de regroupement 1                  (avant)
+       durée du maintient 1                     (avant)
+       Vitesse de montée 2                      (APRÈS la valeur)
+       Durée de regroupement 2                  (après)
+       Température de maintient 2               (après)
+       Durée du maintient 2                     (après)
+       Durée de la sortie 2                     (après)
+       Vitesse de descente 3                    (après)
+       Durée du regroupement 3                  (avant)
+       vitese de descente 4                     (avant)
+   soit, pour les valeurs (exemple donné) :
        \t12°C
        \t20°C/h
        \t5min
-	   \t40min
+       \t40min
        20°C/h\t
        5min\t
        40°C\t
-	   3h02min\t
-	   2min\t
-	   20°C:h\t
-	   \t2min
-	   \t10°C/h
-   Les libellés ("signification") sont ajoutés EN AMONT de ce bloc:
-       température initiale
-       vitesse de montée 1
-       durée de regroupement 1
-	   durée du maintient 1
-	   Vitesse de montée 2
-	   Durée de regroupement 2
-	   Température de maintient 2
-	   Durée du maintient 2
-	   Durée de la sortie 2
-	   Vitesse de descente 3
-	   Durée du regroupement 3
-	   vitese de descente 4
-	   
-   Le fichier final concatène donc le bloc des libellés puis le bloc des
-   valeurs, dans l'ordre des libellées
+       3h02min\t
+       2min\t
+       20°C/h\t
+       \t2min
+       \t10°C/h
+   Le fichier final concatène le bloc des 12 libellés puis le bloc des 12
+   valeurs, chacun respectant la position de tabulation indiquée.
 
 9. Température initiale : première valeur (au premier instant du fichier)
-   de la courbe de référence.
+   de la "première courbe" (voir hypothèse 4).
 
-10. Toutes les valeurs de sortie sont arrondies à l'entier le plus proche, sans
-    décimale (ex. "5 min", "39°C"). Formatage des durées en minutes ou heure minute si supérieur à 60 min plutôt
-    qu'en "HH:MM:SS" le cycle thermique étudié se comptant en minutes.
+10. Toutes les valeurs de sortie sont arrondies à l'entier le plus proche,
+    sans décimale. Durées formatées sans espace, en minutes en dessous de
+    60 min ("5min"), sinon en heures+minutes ("3h02min"). Les vitesses de
+    montée/descente sont exprimées en °C/h (et non plus en °C/min).
 
-11. Couleurs : chaque « point d'intérêt » a sa
-    propre couleur fixe, réutilisée à l'identique sur les graphiques
-    (trait de seuil, trait vertical, marqueur, texte d'annotation) plutôt
-    qu'une couleur générique "début/fin" — utile notamment quand deux
-    seuils ont la même valeur (ex. maintien_debut == maintien_fin) et que
-    les traits se superposeraient sinon. Les annotations textuelles sont
-    posées sur un fond blanc semi-opaque pour rester lisibles par-dessus
-    les courbes sombres.
+11. Couleurs : chaque point d'intérêt (t0 à t10) a sa propre couleur fixe,
+    réutilisée à l'identique sur tous les graphiques (trait de seuil,
+    trait vertical, marqueur, texte d'annotation). Les annotations sont
+    posées sur fond blanc semi-opaque, et leur position (au-dessus/en
+    dessous, à gauche/à droite du point) est choisie automatiquement selon
+    la position du point dans la fenêtre affichée, pour rester à
+    l'intérieur du graphique.
 -------------------------------------------------------------------------
 """
 
@@ -166,11 +179,23 @@ import yaml
 
 
 # =========================================================================
+# Constantes non paramétrables (retirées du YAML à la demande de l'utilisateur)
+# =========================================================================
+
+FORMAT_IMAGE = 'png'
+FORMAT_RESULTATS = 'txt'
+FEUILLE = None
+TITRE_GRAPHIQUE_COL = 3
+TITRE_GRAPHIQUE_LABEL = "Batch No."
+
+DEFAULT_CONFIG_FILE = "analyseHypertrempe.yaml"
+
+
+# =========================================================================
 # Lecture du fichier Excel
 # =========================================================================
 
 _RE_CHANNEL = re.compile(r'^CH[A-Z]?\d{3,4}$', re.IGNORECASE)
-TITRE_GRAPHIQUE_LABEL = "Batch No."
 
 
 def trouver_ligne_entete_channels(ws, max_rows_scan=200):
@@ -200,11 +225,11 @@ def trouver_ligne_debut_donnees(ws, ligne_apres, max_rows_scan=50):
     raise ValueError("Impossible de trouver la ligne d'en-tête 'Date' / 'Time'.")
 
 
-def trouver_titre_graphique(ws, colonne, max_rows_scan=200):
+def trouver_titre_graphique(ws, max_rows_scan=200):
     for r in range(1, min(max_rows_scan, ws.max_row) + 1):
         v = ws.cell(row=r, column=1).value
         if isinstance(v, str) and v.strip() == TITRE_GRAPHIQUE_LABEL:
-            val = ws.cell(row=r, column=colonne).value
+            val = ws.cell(row=r, column=TITRE_GRAPHIQUE_COL).value
             return "" if val is None else str(val).strip()
     return ""
 
@@ -225,13 +250,13 @@ def parser_date_heure(val_date, val_time):
     return datetime.combine(d, t)
 
 
-def lire_donnees_excel(fichier, config):
+def lire_donnees_excel(fichier):
     wb = openpyxl.load_workbook(fichier, data_only=True)
-    ws = wb[config['feuille']] if config['feuille'] else wb[wb.sheetnames[0]]
+    ws = wb[FEUILLE] if FEUILLE else wb[wb.sheetnames[0]]
 
     ligne_ch, canaux_col = trouver_ligne_entete_channels(ws)
     ligne_debut = trouver_ligne_debut_donnees(ws, ligne_ch)
-    titre = trouver_titre_graphique(ws, config['titre_graphique_col'])
+    titre = trouver_titre_graphique(ws)
 
     dates = []
     valeurs_brutes = {nom: [] for nom in canaux_col.values()}
@@ -278,27 +303,6 @@ def filtrer_voies(valeurs_brutes, ch_ignore_dT):
     return voies
 
 
-def construire_courbe_reference(voies, courbe_reference):
-    """Renvoie (nom_reference, [floats]) selon le paramètre courbe_reference :
-    "premiere" (première voie non filtrée, dans l'ordre du fichier),
-    "moyenne" (moyenne des voies retenues), ou un nom de voie explicite."""
-    choix = courbe_reference.strip().lower()
-    if choix == 'premiere':
-        nom = next(iter(voies))
-        return nom, voies[nom]
-    if choix == 'moyenne':
-        noms = list(voies)
-        n = len(voies[noms[0]])
-        moyenne = [sum(voies[nom][i] for nom in noms) / len(noms) for i in range(n)]
-        return "Moyenne", moyenne
-    if courbe_reference not in voies:
-        raise ValueError(
-            f"courbe_reference = {courbe_reference!r} : voie absente des voies retenues "
-            f"({', '.join(sorted(voies))})."
-        )
-    return courbe_reference, voies[courbe_reference]
-
-
 # =========================================================================
 # Détection des instants de franchissement de seuil
 # =========================================================================
@@ -324,59 +328,150 @@ def detecter_franchissement(dates, valeurs, seuil, sens, idx_debut=0):
     return None, None
 
 
-def calculer_cycle(dates, ref, config):
-    """Calcule les instants t1..t5 et les valeurs de synthèse du cycle
-    thermique (voir hypothèse 5 en tête de fichier). Renvoie un dict."""
-    resultat = {
-        't1': None, 't2': None, 't3': None, 't4': None, 't5': None,
-        'temp_initiale': ref[0] if ref else None,
-        'duree_montee_min': None,
-        'temp_max_maintien': None,
-        'duree_maintien_min': None,
-        'vitesse_refroidissement': None,
-    }
+def calculer_cycle(dates, voies, config):
+    """Calcule les instants t0..t10 et les valeurs de synthèse du cycle
+    d'hypertrempe (voir hypothèse 5 en tête de fichier). Renvoie un dict."""
+    noms = list(voies)
+    premiere_nom = noms[0]
+    derniere_nom = noms[-1]
+    premiere = voies[premiere_nom]
+    derniere = voies[derniere_nom]
 
-    t1, i1 = detecter_franchissement(dates, ref, config['temp_montee_basse'], 'montant', 0)
-    resultat['t1'] = t1
+    cycle = {f't{i}': None for i in range(11)}
+    cycle.update({f'seuil_t{i}': None for i in range(11)})
+    cycle.update({
+        'premiere_nom': premiere_nom,
+        'derniere_nom': derniere_nom,
+        'temp_initiale': premiere[0] if premiere else None,
+        'vitesse_montee_1': None,
+        'duree_regroupement_1_min': None,
+        'duree_maintien_1_min': None,
+        'vitesse_montee_2': None,
+        'duree_regroupement_2_min': None,
+        'temp_maintien_2': None,
+        'instant_maintien_2': None,
+        'duree_maintien_2_min': None,
+        'duree_sortie_2_min': None,
+        'vitesse_descente_3': None,
+        'duree_regroupement_3_min': None,
+        'vitesse_descente_4': None,
+    })
+
+    if cycle['temp_initiale'] is None:
+        return cycle
+
+    seuil_t0 = cycle['temp_initiale'] + config['temp_delta_ambiant']
+    cycle['seuil_t0'] = seuil_t0
+    t0, i0 = detecter_franchissement(dates, premiere, seuil_t0, 'montant', 0)
+    cycle['t0'] = t0
+    if t0 is None:
+        return cycle
+
+    seuil_t1 = config['temp_palier_1'] - config['temp_delta_1']
+    cycle['seuil_t1'] = seuil_t1
+    t1, i1 = detecter_franchissement(dates, premiere, seuil_t1, 'montant', i0)
+    cycle['t1'] = t1
     if t1 is None:
-        return resultat
+        return cycle
+    heures = (t1 - t0).total_seconds() / 3600.0
+    if heures > 0:
+        cycle['vitesse_montee_1'] = (seuil_t1 - seuil_t0) / heures
 
-    t2, i2 = detecter_franchissement(dates, ref, config['temp_montee_haute'], 'montant', i1)
-    resultat['t2'] = t2
+    cycle['seuil_t2'] = seuil_t1
+    t2, i2 = detecter_franchissement(dates, derniere, seuil_t1, 'montant', i1)
+    cycle['t2'] = t2
     if t2 is None:
-        return resultat
-    resultat['duree_montee_min'] = (t2 - t1).total_seconds() / 60.0
+        return cycle
+    cycle['duree_regroupement_1_min'] = (t2 - t1).total_seconds() / 60.0
 
-    t3, i3 = detecter_franchissement(dates, ref, config['temp_maintien_debut'], 'montant', i2)
-    resultat['t3'] = t3
+    seuil_t3 = config['temp_palier_1'] + config['temp_delta_1']
+    cycle['seuil_t3'] = seuil_t3
+    t3, i3 = detecter_franchissement(dates, premiere, seuil_t3, 'montant', i2)
+    cycle['t3'] = t3
     if t3 is None:
-        return resultat
+        return cycle
+    cycle['duree_maintien_1_min'] = (t3 - t2).total_seconds() / 60.0
 
-    t4, i4 = detecter_franchissement(dates, ref, config['temp_maintien_fin'], 'descente', i3)
-    resultat['t4'] = t4
+    seuil_t4 = config['temp_palier_2'] - config['temp_delta_2']
+    cycle['seuil_t4'] = seuil_t4
+    t4, i4 = detecter_franchissement(dates, premiere, seuil_t4, 'montant', i3)
+    cycle['t4'] = t4
     if t4 is None:
-        return resultat
-    resultat['duree_maintien_min'] = (t4 - t3).total_seconds() / 60.0
-    resultat['temp_max_maintien'] = max(ref[i3:i4 + 1]) if i4 >= i3 else max(ref[i3], ref[i4])
+        return cycle
+    heures = (t4 - t3).total_seconds() / 3600.0
+    if heures > 0:
+        cycle['vitesse_montee_2'] = (seuil_t4 - seuil_t3) / heures
 
-    t5, i5 = detecter_franchissement(dates, ref, config['temp_refroidissement'], 'descente', i4)
-    resultat['t5'] = t5
+    cycle['seuil_t5'] = seuil_t4
+    t5, i5 = detecter_franchissement(dates, derniere, seuil_t4, 'montant', i4)
+    cycle['t5'] = t5
     if t5 is None:
-        return resultat
-    duree_refroidissement_min = (t5 - t4).total_seconds() / 60.0
-    valeur_t4 = config['temp_maintien_fin']
-    valeur_t5 = config['temp_refroidissement']
-    if duree_refroidissement_min > 0:
-        resultat['vitesse_refroidissement'] = (valeur_t4 - valeur_t5) / duree_refroidissement_min
+        return cycle
+    cycle['duree_regroupement_2_min'] = (t5 - t4).total_seconds() / 60.0
 
-    return resultat
+    seuil_t6 = config['temp_palier_2'] + config['temp_delta_2']
+    cycle['seuil_t6'] = seuil_t6
+    t6, i6 = detecter_franchissement(dates, premiere, seuil_t6, 'montant', i5)
+    cycle['t6'] = t6
+    if t6 is None:
+        return cycle
+    cycle['duree_maintien_2_min'] = (t6 - t5).total_seconds() / 60.0
+
+    debut_idx, fin_idx = min(i5, i6), max(i5, i6)
+    segment_dates = dates[debut_idx:fin_idx + 1]
+    meilleur_valeur, meilleur_instant = None, None
+    for valeurs in voies.values():
+        segment = valeurs[debut_idx:fin_idx + 1]
+        for t, v in zip(segment_dates, segment):
+            if meilleur_valeur is None or v > meilleur_valeur:
+                meilleur_valeur, meilleur_instant = v, t
+    cycle['temp_maintien_2'] = meilleur_valeur
+    cycle['instant_maintien_2'] = meilleur_instant
+
+    seuil_t7 = config['temp_palier_2'] - config['temp_delta_2']
+    cycle['seuil_t7'] = seuil_t7
+    t7, i7 = detecter_franchissement(dates, derniere, seuil_t7, 'descente', i6)
+    cycle['t7'] = t7
+    if t7 is None:
+        return cycle
+    cycle['duree_sortie_2_min'] = (t7 - t6).total_seconds() / 60.0
+
+    seuil_t8 = config['temp_palier_3'] + config['temp_delta_3']
+    cycle['seuil_t8'] = seuil_t8
+    t8, i8 = detecter_franchissement(dates, premiere, seuil_t8, 'descente', i7)
+    cycle['t8'] = t8
+    if t8 is None:
+        return cycle
+    heures = (t8 - t7).total_seconds() / 3600.0
+    if heures > 0:
+        cycle['vitesse_descente_3'] = (seuil_t7 - seuil_t8) / heures
+
+    seuil_t9 = config['temp_palier_3'] - config['temp_delta_3']
+    cycle['seuil_t9'] = seuil_t9
+    t9, i9 = detecter_franchissement(dates, derniere, seuil_t9, 'descente', i8)
+    cycle['t9'] = t9
+    if t9 is None:
+        return cycle
+    cycle['duree_regroupement_3_min'] = (t9 - t8).total_seconds() / 60.0
+
+    seuil_t10 = config['temp_palier_4']
+    cycle['seuil_t10'] = seuil_t10
+    t10, i10 = detecter_franchissement(dates, premiere, seuil_t10, 'descente', i9)
+    cycle['t10'] = t10
+    if t10 is None:
+        return cycle
+    heures = (t10 - t9).total_seconds() / 3600.0
+    if heures > 0:
+        cycle['vitesse_descente_4'] = (seuil_t9 - seuil_t10) / heures
+
+    return cycle
 
 
 # =========================================================================
 # Formatage
 # =========================================================================
 
-def fmt_num(x, decimales=1):
+def fmt_num(x, decimales=0):
     if x is None:
         return "N/A"
     s = f"{x:.{decimales}f}"
@@ -386,15 +481,24 @@ def fmt_num(x, decimales=1):
 
 
 def fmt_temperature(x):
-    return "N/A" if x is None else f"{fmt_num(x, 0)}°C"
+    return "N/A" if x is None else f"{fmt_num(x)}°C"
 
 
-def fmt_duree_min(minutes):
-    return "N/A" if minutes is None else f"{fmt_num(minutes, 0)} min"
+def fmt_duree(minutes):
+    """Durée sans espace : "5min" en dessous de 60 min, sinon "3h02min"."""
+    if minutes is None:
+        return "N/A"
+    total = round(minutes)
+    signe = '-' if total < 0 else ''
+    total_abs = abs(total)
+    if total_abs >= 60:
+        h, m = divmod(total_abs, 60)
+        return f"{signe}{h}h{m:02d}min"
+    return f"{signe}{total_abs}min"
 
 
-def fmt_vitesse(x):
-    return "N/A" if x is None else f"{fmt_num(x, 0)}°C/min"
+def fmt_vitesse_h(x):
+    return "N/A" if x is None else f"{fmt_num(x)}°C/h"
 
 
 # =========================================================================
@@ -402,36 +506,36 @@ def fmt_vitesse(x):
 # =========================================================================
 
 _COULEUR_GRISE = '0.75'
-_COULEUR_REFERENCE = 'black'
-
-# Une couleur fixe par point d'intérêt, réutilisée à l'identique sur les
-# 4 graphiques (voir hypothèse 11 en tête de fichier).
-COULEURS_POINTS = {
-    't0': '#8c564b',  # brun    - température initiale
-    't1': '#1f77b4',  # bleu    - montée basse
-    't2': '#ff7f0e',  # orange  - montée haute
-    't3': '#2ca02c',  # vert    - maintien début
-    't4': '#d62728',  # rouge   - maintien fin
-    't5': '#9467bd',  # violet  - refroidissement
-}
-LABELS_POINTS = {
-    't0': 'Température initiale',
-    't1': 'Montée basse',
-    't2': 'Montée haute',
-    't3': 'Maintien début',
-    't4': 'Maintien fin',
-    't5': 'Refroidissement',
-}
+_COULEUR_PREMIERE = 'black'
+_COULEUR_DERNIERE = '#8c1616'
+_COULEUR_INITIALE = '#8c564b'
 _COULEUR_MAX_MAINTIEN = 'teal'
 
+_ORDRE_POINTS = [f't{i}' for i in range(11)]
+_PALETTE = plt.get_cmap('tab20').colors
+COULEURS_POINTS = {cle: _PALETTE[i] for i, cle in enumerate(_ORDRE_POINTS)}
+LABELS_POINTS = {
+    't0': 'Début montée',
+    't1': 'Fin montée 1',
+    't2': 'Regroupement 1',
+    't3': 'Maintien 1',
+    't4': 'Fin montée 2',
+    't5': 'Regroupement 2',
+    't6': 'Maintien 2',
+    't7': 'Sortie 2',
+    't8': 'Fin descente 3',
+    't9': 'Regroupement 3',
+    't10': 'Fin descente 4',
+}
 
-def _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max):
+
+def _tracer_courbes_fenetre(ax, dates, voies, premiere_nom, derniere_nom, t_min, t_max):
     """Trace, dans la fenêtre [t_min, t_max], toutes les voies retenues en
-    gris (une seule entrée de légende "Autres voies"), et la courbe de
-    référence surlignée en noir."""
+    gris (une seule entrée de légende "Autres voies"), et les courbes
+    première/dernière surlignées."""
     premiere_grise = True
     for nom, valeurs in voies.items():
-        if nom == nom_ref:
+        if nom in (premiere_nom, derniere_nom):
             continue
         xs, ys = [], []
         for t, v in zip(dates, valeurs):
@@ -440,60 +544,70 @@ def _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max):
                 ys.append(v)
         if xs:
             label = "Autres voies" if premiere_grise else None
-            ax.plot(xs, ys, color=_COULEUR_GRISE, linewidth=0.8, alpha=0.9,
-                     zorder=1, label=label)
+            ax.plot(xs, ys, color=_COULEUR_GRISE, linewidth=0.8, alpha=0.9, zorder=1, label=label)
             premiere_grise = False
 
-    xs_ref = [t for t in dates if t_min <= t <= t_max]
-    ys_ref = [v for t, v in zip(dates, ref) if t_min <= t <= t_max]
-    if xs_ref:
-        ax.plot(xs_ref, ys_ref, color=_COULEUR_REFERENCE, linewidth=2, label=nom_ref, zorder=3)
+    voies_mises_en_avant = [(premiere_nom, _COULEUR_PREMIERE, f"{premiere_nom} (première)")]
+    if derniere_nom != premiere_nom:
+        voies_mises_en_avant.append((derniere_nom, _COULEUR_DERNIERE, f"{derniere_nom} (dernière)"))
+    for nom, couleur, label in voies_mises_en_avant:
+        xs = [t for t in dates if t_min <= t <= t_max]
+        ys = [v for t, v in zip(dates, voies[nom]) if t_min <= t <= t_max]
+        if xs:
+            ax.plot(xs, ys, color=couleur, linewidth=2, label=label, zorder=3)
 
 
-def _annoter_point(ax, instant, valeur, texte, couleur, y_range, decalage_x=8, ha='left', label=None):
+def _annoter_point(ax, instant, valeur, texte, couleur, x_range, y_range, label=None):
     """Place un marqueur + une étiquette pour un point d'intérêt. La
-    position verticale de l'étiquette (au-dessus ou en dessous du point)
-    est choisie automatiquement selon la position du point dans la plage
-    y_range = (y_min, y_max) de l'axe, pour que l'étiquette reste à
-    l'intérieur du graphique (ne déborde pas sur le titre ou le graphique
-    voisin)."""
+    position de l'étiquette (haut/bas, gauche/droite) est choisie
+    automatiquement selon la position du point dans (x_range, y_range),
+    pour rester à l'intérieur du graphique. x_range peut contenir des
+    datetime (fenêtres calculées manuellement) ou des floats matplotlib
+    (ex. ax.get_xlim()) : les deux sont normalisés avant comparaison."""
+    def _num(x):
+        return mdates.date2num(x) if isinstance(x, datetime) else x
+
+    x_min, x_max = x_range
     y_min, y_max = y_range
+    a_gauche = _num(instant) <= (_num(x_min) + _num(x_max)) / 2
     au_dessus = valeur <= (y_min + y_max) / 2
+    dx = 8 if a_gauche else -8
     dy = 8 if au_dessus else -8
+    ha = 'left' if a_gauche else 'right'
     va = 'bottom' if au_dessus else 'top'
     ax.plot([instant], [valeur], marker='o', color=couleur, markersize=6,
              markeredgecolor='white', markeredgewidth=0.7, zorder=6, label=label,
              clip_on=True)
-    ax.annotate(texte, xy=(instant, valeur), xytext=(decalage_x, dy), textcoords='offset points',
+    ax.annotate(texte, xy=(instant, valeur), xytext=(dx, dy), textcoords='offset points',
                  color=couleur, fontsize=8, fontweight='bold', ha=ha, va=va, clip_on=True,
                  bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
                            edgecolor=couleur, linewidth=1, alpha=0.9))
 
 
-def _tracer_zoom_montee(ax, dates, voies, nom_ref, ref, cycle, config):
-    t1, t2 = cycle['t1'], cycle['t2']
-    if t1 is None or t2 is None:
-        ax.set_title("Montée : seuils non atteints")
+def _tracer_zoom_phase(ax, dates, voies, premiere_nom, derniere_nom, config, points, titre):
+    """points : liste de tuples (instant, valeur, couleur, label, ligne_horizontale)."""
+    if not points or any(p[0] is None or p[1] is None for p in points):
+        ax.set_title(f"{titre} : seuils non atteints", fontweight='bold', pad=8)
         ax.text(0.5, 0.5, "Seuils non franchis", ha='center', va='center',
                  transform=ax.transAxes, color='dimgray')
         return
 
     marge_t = timedelta(minutes=config['zoom_marge_temps'])
     marge_T = config['zoom_marge_temperature']
-    t_min, t_max = t1 - marge_t, t2 + marge_t
-    y_min = config['temp_montee_basse'] - marge_T
-    y_max = config['temp_montee_haute'] + marge_T
+    instants = [p[0] for p in points]
+    valeurs = [p[1] for p in points]
+    t_min, t_max = min(instants) - marge_t, max(instants) + marge_t
+    y_min, y_max = min(valeurs) - marge_T, max(valeurs) + marge_T
+    x_range, y_range = (t_min, t_max), (y_min, y_max)
 
-    _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max)
-    ax.axhline(config['temp_montee_basse'], color=COULEURS_POINTS['t1'], linestyle='--', linewidth=1.2)
-    ax.axhline(config['temp_montee_haute'], color=COULEURS_POINTS['t2'], linestyle='--', linewidth=1.2)
-    y_range = (y_min, y_max)
-    _annoter_point(ax, t1, config['temp_montee_basse'],
-                    f"{t1.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_montee_basse'])}",
-                    COULEURS_POINTS['t1'], y_range)
-    _annoter_point(ax, t2, config['temp_montee_haute'],
-                    f"{t2.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_montee_haute'])}",
-                    COULEURS_POINTS['t2'], y_range, decalage_x=-8, ha='right')
+    _tracer_courbes_fenetre(ax, dates, voies, premiere_nom, derniere_nom, t_min, t_max)
+
+    for instant, valeur, couleur, label, ligne_horizontale in points:
+        if ligne_horizontale:
+            ax.axhline(valeur, color=couleur, linestyle='--', linewidth=1.2)
+        _annoter_point(ax, instant, valeur,
+                        f"{instant.strftime('%H:%M:%S')}\n{fmt_temperature(valeur)}",
+                        couleur, x_range, y_range, label=label)
 
     ax.set_xlim(t_min, t_max)
     ax.set_ylim(y_min, y_max)
@@ -503,123 +617,49 @@ def _tracer_zoom_montee(ax, dates, voies, nom_ref, ref, cycle, config):
         lbl.set_ha('right')
     ax.set_ylabel("Température (°C)")
     ax.grid(True, alpha=0.3)
-    ax.set_title(f"Montée — durée : {fmt_duree_min(cycle['duree_montee_min'])}", fontweight='bold', pad=8)
+    ax.set_title(titre, fontweight='bold', pad=8)
 
 
-def _tracer_zoom_maintien(ax, dates, voies, nom_ref, ref, cycle, config):
-    t3, t4 = cycle['t3'], cycle['t4']
-    if t3 is None or t4 is None:
-        ax.set_title("Maintien : seuils non atteints")
-        ax.text(0.5, 0.5, "Seuils non franchis", ha='center', va='center',
-                 transform=ax.transAxes, color='dimgray')
-        return
+def tracer_graphique(fichier, titre, dates, voies, cycle, config):
+    premiere_nom, derniere_nom = cycle['premiere_nom'], cycle['derniere_nom']
 
-    marge_t = timedelta(minutes=config['zoom_marge_temps'])
-    marge_T = config['zoom_marge_temperature']
-    t_min, t_max = t3 - marge_t, t4 + marge_t
-    t_max_maintien = cycle['temp_max_maintien']
-    y_min = min(config['temp_maintien_debut'], config['temp_maintien_fin']) - marge_T
-    y_max = t_max_maintien + marge_T
-
-    _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max)
-    ax.axhline(config['temp_maintien_debut'], color=COULEURS_POINTS['t3'], linestyle='--', linewidth=1.2)
-    ax.axhline(config['temp_maintien_fin'], color=COULEURS_POINTS['t4'], linestyle='--', linewidth=1.2)
-    ax.axhline(t_max_maintien, color=_COULEUR_MAX_MAINTIEN, linestyle=':', linewidth=1.3)
-    y_range = (y_min, y_max)
-    _annoter_point(ax, t3, config['temp_maintien_debut'],
-                    f"{t3.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_maintien_debut'])}",
-                    COULEURS_POINTS['t3'], y_range)
-    _annoter_point(ax, t4, config['temp_maintien_fin'],
-                    f"{t4.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_maintien_fin'])}",
-                    COULEURS_POINTS['t4'], y_range, decalage_x=-8, ha='right')
-    au_dessus_max = t_max_maintien <= (y_min + y_max) / 2
-    ax.annotate(f"Max : {fmt_temperature(t_max_maintien)}", xy=(t_max, t_max_maintien),
-                 xytext=(-6, 8 if au_dessus_max else -8), textcoords='offset points', ha='right',
-                 va='bottom' if au_dessus_max else 'top', clip_on=True,
-                 color=_COULEUR_MAX_MAINTIEN, fontsize=8, fontweight='bold',
-                 bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
-                           edgecolor=_COULEUR_MAX_MAINTIEN, linewidth=1, alpha=0.9))
-
-    ax.set_xlim(t_min, t_max)
-    ax.set_ylim(y_min, y_max)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-    for lbl in ax.get_xticklabels():
-        lbl.set_rotation(20)
-        lbl.set_ha('right')
-    ax.set_ylabel("Température (°C)")
-    ax.grid(True, alpha=0.3)
-    ax.set_title(f"Maintien — durée : {fmt_duree_min(cycle['duree_maintien_min'])}", fontweight='bold', pad=8)
-
-
-def _tracer_zoom_refroidissement(ax, dates, voies, nom_ref, ref, cycle, config):
-    t4, t5 = cycle['t4'], cycle['t5']
-    if t4 is None or t5 is None:
-        ax.set_title("Refroidissement : seuils non atteints")
-        ax.text(0.5, 0.5, "Seuils non franchis", ha='center', va='center',
-                 transform=ax.transAxes, color='dimgray')
-        return
-
-    marge_t = timedelta(minutes=config['zoom_marge_temps'])
-    marge_T = config['zoom_marge_temperature']
-    t_min, t_max = t4 - marge_t, t5 + marge_t
-    y_min = config['temp_refroidissement'] - marge_T
-    y_max = config['temp_maintien_fin'] + marge_T
-
-    _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max)
-    ax.axhline(config['temp_maintien_fin'], color=COULEURS_POINTS['t4'], linestyle='--', linewidth=1.2)
-    ax.axhline(config['temp_refroidissement'], color=COULEURS_POINTS['t5'], linestyle='--', linewidth=1.2)
-    y_range = (y_min, y_max)
-    _annoter_point(ax, t4, config['temp_maintien_fin'],
-                    f"{t4.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_maintien_fin'])}",
-                    COULEURS_POINTS['t4'], y_range)
-    _annoter_point(ax, t5, config['temp_refroidissement'],
-                    f"{t5.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_refroidissement'])}",
-                    COULEURS_POINTS['t5'], y_range, decalage_x=-8, ha='right')
-
-    ax.set_xlim(t_min, t_max)
-    ax.set_ylim(y_min, y_max)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-    for lbl in ax.get_xticklabels():
-        lbl.set_rotation(20)
-        lbl.set_ha('right')
-    ax.set_ylabel("Température (°C)")
-    ax.grid(True, alpha=0.3)
-    ax.set_title(f"Refroidissement — vitesse : {fmt_vitesse(cycle['vitesse_refroidissement'])}",
-                  fontweight='bold', pad=8)
-
-
-def tracer_graphique(fichier, titre, dates, voies, nom_ref, ref, cycle, config):
     fig = plt.figure(figsize=tuple(config['figure_taille']))
-    gs = fig.add_gridspec(3, 2, width_ratios=[1.4, 1], hspace=0.6, wspace=0.25)
+    gs = fig.add_gridspec(4, 2, width_ratios=[1.4, 1], hspace=0.7, wspace=0.25)
     ax_gauche = fig.add_subplot(gs[:, 0])
-    ax_montee = fig.add_subplot(gs[0, 1])
-    ax_maintien = fig.add_subplot(gs[1, 1])
-    ax_refroidissement = fig.add_subplot(gs[2, 1])
+    ax_p1 = fig.add_subplot(gs[0, 1])
+    ax_p2 = fig.add_subplot(gs[1, 1])
+    ax_p3 = fig.add_subplot(gs[2, 1])
+    ax_p4 = fig.add_subplot(gs[3, 1])
 
-    # --- Graphique global (gauche, pleine hauteur) : voies grisées + référence ---
+    # --- Graphique global (gauche, pleine hauteur) ---
     premiere_grise = True
     for nom, valeurs in voies.items():
-        if nom == nom_ref:
+        if nom in (premiere_nom, derniere_nom):
             continue
         label = "Autres voies" if premiere_grise else None
         ax_gauche.plot(dates, valeurs, color=_COULEUR_GRISE, linewidth=0.8,
                         alpha=0.9, label=label, zorder=1)
         premiere_grise = False
-    ax_gauche.plot(dates, ref, color=_COULEUR_REFERENCE, linewidth=2, label=nom_ref, zorder=3)
+    ax_gauche.plot(dates, voies[premiere_nom], color=_COULEUR_PREMIERE, linewidth=2,
+                    label=f"{premiere_nom} (première)", zorder=3)
+    if derniere_nom != premiere_nom:
+        ax_gauche.plot(dates, voies[derniere_nom], color=_COULEUR_DERNIERE, linewidth=2,
+                        label=f"{derniere_nom} (dernière)", zorder=3)
 
     if cycle['temp_initiale'] is not None and dates:
+        x_range_gauche = ax_gauche.get_xlim()
         y_range_gauche = ax_gauche.get_ylim()
         _annoter_point(ax_gauche, dates[0], cycle['temp_initiale'],
                         f"{dates[0].strftime('%H:%M:%S')}\n{fmt_temperature(cycle['temp_initiale'])}",
-                        COULEURS_POINTS['t0'], y_range_gauche, decalage_x=8, label=LABELS_POINTS['t0'])
+                        _COULEUR_INITIALE, x_range_gauche, y_range_gauche,
+                        label="Température initiale")
 
-    for cle, couleur in COULEURS_POINTS.items():
-        if cle == 't0':
-            continue
+    for cle in _ORDRE_POINTS:
         instant = cycle[cle]
         if instant is not None:
-            ax_gauche.axvline(instant, color=couleur, linestyle='--', linewidth=1.3,
-                                alpha=0.8, label=LABELS_POINTS[cle])
+            ax_gauche.axvline(instant, color=COULEURS_POINTS[cle], linestyle='--',
+                                linewidth=1.2, alpha=0.8, label=LABELS_POINTS[cle])
+
     ax_gauche.set_xlabel("Temps")
     ax_gauche.set_ylabel("Température (°C)")
     ax_gauche.xaxis.set_major_formatter(mdates.DateFormatter('%Y/%m/%d %H:%M:%S'))
@@ -627,24 +667,62 @@ def tracer_graphique(fichier, titre, dates, voies, nom_ref, ref, cycle, config):
         lbl.set_rotation(30)
         lbl.set_ha('right')
     ax_gauche.grid(True, alpha=0.3)
-    ax_gauche.legend(loc='upper left', ncol=2, fontsize=7, framealpha=0.9)
+    ax_gauche.legend(loc='upper left', ncol=3, fontsize=6, framealpha=0.9)
 
-    # --- Zooms montée / maintien / refroidissement ---
-    _tracer_zoom_montee(ax_montee, dates, voies, nom_ref, ref, cycle, config)
-    _tracer_zoom_maintien(ax_maintien, dates, voies, nom_ref, ref, cycle, config)
-    _tracer_zoom_refroidissement(ax_refroidissement, dates, voies, nom_ref, ref, cycle, config)
+    # --- Phase 1 : palier 1 (montée / regroupement / maintien) ---
+    titre_p1 = (f"Palier 1 — montée {fmt_vitesse_h(cycle['vitesse_montee_1'])} | "
+                f"regroup. {fmt_duree(cycle['duree_regroupement_1_min'])} | "
+                f"maintien {fmt_duree(cycle['duree_maintien_1_min'])}")
+    points_p1 = [
+        (cycle['t0'], cycle['seuil_t0'], COULEURS_POINTS['t0'], LABELS_POINTS['t0'], True),
+        (cycle['t1'], cycle['seuil_t1'], COULEURS_POINTS['t1'], LABELS_POINTS['t1'], True),
+        (cycle['t2'], cycle['seuil_t2'], COULEURS_POINTS['t2'], LABELS_POINTS['t2'], True),
+        (cycle['t3'], cycle['seuil_t3'], COULEURS_POINTS['t3'], LABELS_POINTS['t3'], True),
+    ]
+    _tracer_zoom_phase(ax_p1, dates, voies, premiere_nom, derniere_nom, config, points_p1, titre_p1)
+
+    # --- Phase 2 : palier 2 (montée / regroupement / maintien / sortie) ---
+    titre_p2 = (f"Palier 2 — montée {fmt_vitesse_h(cycle['vitesse_montee_2'])} | "
+                f"regroup. {fmt_duree(cycle['duree_regroupement_2_min'])} | "
+                f"maintien {fmt_duree(cycle['duree_maintien_2_min'])} | "
+                f"sortie {fmt_duree(cycle['duree_sortie_2_min'])}")
+    points_p2 = [
+        (cycle['t4'], cycle['seuil_t4'], COULEURS_POINTS['t4'], LABELS_POINTS['t4'], True),
+        (cycle['t5'], cycle['seuil_t5'], COULEURS_POINTS['t5'], LABELS_POINTS['t5'], True),
+        (cycle['t6'], cycle['seuil_t6'], COULEURS_POINTS['t6'], LABELS_POINTS['t6'], True),
+        (cycle['t7'], cycle['seuil_t7'], COULEURS_POINTS['t7'], LABELS_POINTS['t7'], True),
+    ]
+    if cycle['instant_maintien_2'] is not None and cycle['temp_maintien_2'] is not None:
+        points_p2.append((cycle['instant_maintien_2'], cycle['temp_maintien_2'],
+                           _COULEUR_MAX_MAINTIEN, "Max maintien 2", True))
+    _tracer_zoom_phase(ax_p2, dates, voies, premiere_nom, derniere_nom, config, points_p2, titre_p2)
+
+    # --- Phase 3 : refroidissement palier 3 (descente / regroupement) ---
+    titre_p3 = (f"Refroidissement palier 3 — descente {fmt_vitesse_h(cycle['vitesse_descente_3'])} | "
+                f"regroup. {fmt_duree(cycle['duree_regroupement_3_min'])}")
+    points_p3 = [
+        (cycle['t7'], cycle['seuil_t7'], COULEURS_POINTS['t7'], LABELS_POINTS['t7'], True),
+        (cycle['t8'], cycle['seuil_t8'], COULEURS_POINTS['t8'], LABELS_POINTS['t8'], True),
+        (cycle['t9'], cycle['seuil_t9'], COULEURS_POINTS['t9'], LABELS_POINTS['t9'], True),
+    ]
+    _tracer_zoom_phase(ax_p3, dates, voies, premiere_nom, derniere_nom, config, points_p3, titre_p3)
+
+    # --- Phase 4 : sortie finale palier 4 ---
+    titre_p4 = f"Sortie finale — descente {fmt_vitesse_h(cycle['vitesse_descente_4'])}"
+    points_p4 = [
+        (cycle['t9'], cycle['seuil_t9'], COULEURS_POINTS['t9'], LABELS_POINTS['t9'], True),
+        (cycle['t10'], cycle['seuil_t10'], COULEURS_POINTS['t10'], LABELS_POINTS['t10'], True),
+    ]
+    _tracer_zoom_phase(ax_p4, dates, voies, premiere_nom, derniere_nom, config, points_p4, titre_p4)
 
     fig.suptitle(titre or os.path.basename(fichier), fontsize=14, fontweight='bold', y=0.99)
-    fig.text(0.5, 0.955,
-              f"Référence : {nom_ref}   |   "
+    fig.text(0.5, 0.965,
+              f"1ère voie : {premiere_nom}   |   dernière voie : {derniere_nom}   |   "
               f"T° initiale : {fmt_temperature(cycle['temp_initiale'])}   |   "
-              f"Durée montée : {fmt_duree_min(cycle['duree_montee_min'])}   |   "
-              f"T° max maintien : {fmt_temperature(cycle['temp_max_maintien'])}   |   "
-              f"Durée maintien : {fmt_duree_min(cycle['duree_maintien_min'])}   |   "
-              f"Vitesse refroid. : {fmt_vitesse(cycle['vitesse_refroidissement'])}",
+              f"T° maintien 2 (max) : {fmt_temperature(cycle['temp_maintien_2'])}",
               ha='center', fontsize=9, color='dimgray')
 
-    fig.subplots_adjust(top=0.88, bottom=0.16, left=0.06, right=0.95)
+    fig.subplots_adjust(top=0.90, bottom=0.14, left=0.06, right=0.95)
     return fig
 
 
@@ -652,25 +730,39 @@ def tracer_graphique(fichier, titre, dates, voies, nom_ref, ref, cycle, config):
 # Fichier de résultats (formalisme strict, voir hypothèse 8)
 # =========================================================================
 
-# (position_tabulation, libellé) pour chacune des 5 valeurs, dans l'ordre.
+# (position_tabulation, libellé) pour chacune des 12 valeurs, dans l'ordre.
 # 'avant' -> "\tvaleur" ; 'apres' -> "valeur\t" (reproduit exactement le
-# formalisme de l'exemple fourni).
+# formalisme — et l'orthographe — de l'exemple fourni).
 _FORMALISME_RESULTATS = [
     ('avant', "température initiale"),
-    ('apres', "durée de montée"),
-    ('apres', "température maximale de maintien"),
-    ('apres', "durée de maintien"),
-    ('apres', "vitesse de refroidissement"),
+    ('avant', "vitesse de montée 1"),
+    ('avant', "durée de regroupement 1"),
+    ('avant', "durée du maintient 1"),
+    ('apres', "Vitesse de montée 2"),
+    ('apres', "Durée de regroupement 2"),
+    ('apres', "Température de maintient 2"),
+    ('apres', "Durée du maintient 2"),
+    ('apres', "Durée de la sortie 2"),
+    ('apres', "Vitesse de descente 3"),
+    ('avant', "Durée du regroupement 3"),
+    ('avant', "vitese de descente 4"),
 ]
 
 
 def ecrire_resultats(fichier_sortie, cycle):
     valeurs = [
         fmt_temperature(cycle['temp_initiale']),
-        fmt_duree_min(cycle['duree_montee_min']),
-        fmt_temperature(cycle['temp_max_maintien']),
-        fmt_duree_min(cycle['duree_maintien_min']),
-        fmt_vitesse(cycle['vitesse_refroidissement']),
+        fmt_vitesse_h(cycle['vitesse_montee_1']),
+        fmt_duree(cycle['duree_regroupement_1_min']),
+        fmt_duree(cycle['duree_maintien_1_min']),
+        fmt_vitesse_h(cycle['vitesse_montee_2']),
+        fmt_duree(cycle['duree_regroupement_2_min']),
+        fmt_temperature(cycle['temp_maintien_2']),
+        fmt_duree(cycle['duree_maintien_2_min']),
+        fmt_duree(cycle['duree_sortie_2_min']),
+        fmt_vitesse_h(cycle['vitesse_descente_3']),
+        fmt_duree(cycle['duree_regroupement_3_min']),
+        fmt_vitesse_h(cycle['vitesse_descente_4']),
     ]
 
     lignes_libelles = []
@@ -693,7 +785,7 @@ def ecrire_resultats(fichier_sortie, cycle):
 
 def analyser_fichier(fichier, config):
     print(f"📄 Lecture de {fichier}...")
-    titre, dates, valeurs_brutes = lire_donnees_excel(fichier, config)
+    titre, dates, valeurs_brutes = lire_donnees_excel(fichier)
     print(f"   {len(dates)} échantillons, {len(valeurs_brutes)} voies détectées.")
 
     voies = filtrer_voies(valeurs_brutes, config['CH_ignore_dT'])
@@ -706,41 +798,39 @@ def analyser_fichier(fichier, config):
         return
     print(f"   ✅ Voies retenues : {', '.join(voies)}")
 
-    nom_ref, ref = construire_courbe_reference(voies, config['courbe_reference'])
-    print(f"   📐 Courbe de référence : {nom_ref}")
-
-    cycle = calculer_cycle(dates, ref, config)
+    cycle = calculer_cycle(dates, voies, config)
+    print(f"   📐 1ère voie : {cycle['premiere_nom']}   dernière voie : {cycle['derniere_nom']}")
     print(f"   T° initiale = {fmt_temperature(cycle['temp_initiale'])}")
-    if cycle['t1'] is None:
-        print(f"   ⚠️ temp_montee_basse ({config['temp_montee_basse']}°) jamais franchie.")
-    elif cycle['t2'] is None:
-        print(f"   ⚠️ temp_montee_haute ({config['temp_montee_haute']}°) jamais franchie.")
-    else:
-        print(f"   ⏱️  Montée : {cycle['t1']} → {cycle['t2']} "
-              f"(durée = {fmt_duree_min(cycle['duree_montee_min'])})")
-        if cycle['t3'] is None:
-            print(f"   ⚠️ temp_maintien_debut ({config['temp_maintien_debut']}°) jamais franchie.")
-        elif cycle['t4'] is None:
-            print(f"   ⚠️ temp_maintien_fin ({config['temp_maintien_fin']}°) jamais franchie.")
-        else:
-            print(f"   ⏱️  Maintien : {cycle['t3']} → {cycle['t4']} "
-                  f"(durée = {fmt_duree_min(cycle['duree_maintien_min'])}, "
-                  f"T° max = {fmt_temperature(cycle['temp_max_maintien'])})")
-            if cycle['t5'] is None:
-                print(f"   ⚠️ temp_refroidissement ({config['temp_refroidissement']}°) jamais franchie.")
-            else:
-                print(f"   ⏱️  Refroidissement : {cycle['t4']} → {cycle['t5']} "
-                      f"(vitesse = {fmt_vitesse(cycle['vitesse_refroidissement'])})")
 
-    fig = tracer_graphique(fichier, titre, dates, voies, nom_ref, ref, cycle, config)
+    etapes = [
+        ('t0', 'début montée', "temp_initiale + temp_delta_ambiant"),
+        ('t1', 'fin montée 1', "temp_palier_1 - temp_delta_1"),
+        ('t2', 'regroupement 1', "temp_palier_1 - temp_delta_1 (dernière voie)"),
+        ('t3', 'maintien 1', "temp_palier_1 + temp_delta_1"),
+        ('t4', 'fin montée 2', "temp_palier_2 - temp_delta_2"),
+        ('t5', 'regroupement 2', "temp_palier_2 - temp_delta_2 (dernière voie)"),
+        ('t6', 'maintien 2', "temp_palier_2 + temp_delta_2"),
+        ('t7', 'sortie 2', "temp_palier_2 - temp_delta_2 (dernière voie, descente)"),
+        ('t8', 'fin descente 3', "temp_palier_3 + temp_delta_3"),
+        ('t9', 'regroupement 3', "temp_palier_3 - temp_delta_3 (dernière voie)"),
+        ('t10', 'fin descente 4', "temp_palier_4"),
+    ]
+    for cle, nom_etape, _ in etapes:
+        if cycle[cle] is None:
+            print(f"   ⚠️ Étape non atteinte : {nom_etape} ({cle}).")
+            break
+    else:
+        print(f"   ⏱️  Cycle complet détecté (t0 → t10).")
+
+    fig = tracer_graphique(fichier, titre, dates, voies, cycle, config)
 
     base, _ = os.path.splitext(fichier)
-    fichier_image = f"{base}_{config['suffixe']}.{config['format_image']}"
+    fichier_image = f"{base}_{config['suffixe']}.{FORMAT_IMAGE}"
     fig.savefig(fichier_image, dpi=config['dpi'], bbox_inches='tight')
     plt.close(fig)
     print(f"✅ Graphique généré -> {fichier_image}")
 
-    fichier_resultats = f"{base}_{config['suffixe_resultats']}.{config['format_resultats']}"
+    fichier_resultats = f"{base}_{config['suffixe_resultats']}.{FORMAT_RESULTATS}"
     ecrire_resultats(fichier_resultats, cycle)
     print(f"✅ Résultats générés -> {fichier_resultats}")
 
@@ -749,26 +839,22 @@ def analyser_fichier(fichier, config):
 # Configuration (YAML) et arguments en ligne de commande
 # =========================================================================
 
-DEFAULT_CONFIG_FILE = "analyseHypertrempe.yaml"
-
 DEFAULTS = {
     'CH_ignore_dT': 20.0,
-    'courbe_reference': 'premiere',
-    'temp_montee_basse': 100.0,
-    'temp_montee_haute': 200.0,
-    'temp_maintien_debut': 200.0,
-    'temp_maintien_fin': 200.0,
-    'temp_refroidissement': None,  # None -> = temp_montee_haute
+    'temp_delta_ambiant': 10.0,
+    'temp_palier_1': 450.0,
+    'temp_delta_1': 15.0,
+    'temp_palier_2': 550.0,
+    'temp_delta_2': 15.0,
+    'temp_palier_3': 300.0,
+    'temp_delta_3': 15.0,
+    'temp_palier_4': 50.0,
     'zoom_marge_temperature': 20.0,
     'zoom_marge_temps': 5.0,
     'suffixe': 'Analyse',
     'suffixe_resultats': 'Resultats',
-    'format_image': 'png',
-    'format_resultats': 'txt',
     'dpi': 150,
-    'figure_taille': [15, 8],
-    'feuille': None,
-    'titre_graphique_col': 3,
+    'figure_taille': [16, 11],
 }
 
 
@@ -795,19 +881,16 @@ def construire_config(args):
             return cli_val
         return yaml_params.get(cle_yaml, DEFAULTS[cle_yaml])
 
-    temp_montee_basse = float(valeur(args.temp_montee_basse, 'temp_montee_basse'))
-    temp_montee_haute = float(valeur(args.temp_montee_haute, 'temp_montee_haute'))
-    temp_refroidissement = valeur(args.temp_refroidissement, 'temp_refroidissement')
-    temp_refroidissement = temp_montee_basse if temp_refroidissement is None else float(temp_refroidissement)
-
     config = {
         'CH_ignore_dT': float(valeur(args.ch_ignore_dt, 'CH_ignore_dT')),
-        'courbe_reference': str(yaml_params.get('courbe_reference', DEFAULTS['courbe_reference'])),
-        'temp_montee_basse': temp_montee_basse,
-        'temp_montee_haute': temp_montee_haute,
-        'temp_maintien_debut': float(valeur(args.temp_maintien_debut, 'temp_maintien_debut')),
-        'temp_maintien_fin': float(valeur(args.temp_maintien_fin, 'temp_maintien_fin')),
-        'temp_refroidissement': temp_refroidissement,
+        'temp_delta_ambiant': float(valeur(args.temp_delta_ambiant, 'temp_delta_ambiant')),
+        'temp_palier_1': float(valeur(args.temp_palier_1, 'temp_palier_1')),
+        'temp_delta_1': float(valeur(args.temp_delta_1, 'temp_delta_1')),
+        'temp_palier_2': float(valeur(args.temp_palier_2, 'temp_palier_2')),
+        'temp_delta_2': float(valeur(args.temp_delta_2, 'temp_delta_2')),
+        'temp_palier_3': float(valeur(args.temp_palier_3, 'temp_palier_3')),
+        'temp_delta_3': float(valeur(args.temp_delta_3, 'temp_delta_3')),
+        'temp_palier_4': float(valeur(args.temp_palier_4, 'temp_palier_4')),
         'zoom_marge_temperature': float(
             yaml_params.get('zoom_marge_temperature', DEFAULTS['zoom_marge_temperature'])
         ),
@@ -816,14 +899,8 @@ def construire_config(args):
         ),
         'suffixe': str(yaml_params.get('suffixe', DEFAULTS['suffixe'])),
         'suffixe_resultats': str(yaml_params.get('suffixe_resultats', DEFAULTS['suffixe_resultats'])),
-        'format_image': str(yaml_params.get('format_image', DEFAULTS['format_image'])),
-        'format_resultats': str(yaml_params.get('format_resultats', DEFAULTS['format_resultats'])),
         'dpi': int(yaml_params.get('dpi', DEFAULTS['dpi'])),
         'figure_taille': yaml_params.get('figure_taille', DEFAULTS['figure_taille']),
-        'feuille': yaml_params.get('feuille', DEFAULTS['feuille']),
-        'titre_graphique_col': int(
-            yaml_params.get('titre_graphique_col', DEFAULTS['titre_graphique_col'])
-        ),
     }
 
     return config
@@ -831,23 +908,23 @@ def construire_config(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyse du cycle thermique (montée / maintien / refroidissement) d'un ou "
-                    "plusieurs fichiers Excel et génération d'images + fichiers de résultats."
+        description="Analyse du cycle d'hypertrempe (montée / regroupement / maintien x2 + "
+                    "refroidissement x2) d'un ou plusieurs fichiers Excel et génération "
+                    "d'images + fichiers de résultats."
     )
     parser.add_argument("fichiers", nargs="*", help="Un ou plusieurs fichiers Excel (.xlsx) à traiter")
     parser.add_argument("--config", type=str, help="Chemin du fichier YAML de configuration")
     parser.add_argument("--ch-ignore-dt", dest="ch_ignore_dt", type=float,
                          help="Seuil d'amplitude (°C) en dessous duquel une voie est ignorée")
-    parser.add_argument("--temp-montee-basse", dest="temp_montee_basse", type=float,
-                         help="Température basse du seuil de montée")
-    parser.add_argument("--temp-montee-haute", dest="temp_montee_haute", type=float,
-                         help="Température haute du seuil de montée")
-    parser.add_argument("--temp-maintien-debut", dest="temp_maintien_debut", type=float,
-                         help="Température de début de maintien")
-    parser.add_argument("--temp-maintien-fin", dest="temp_maintien_fin", type=float,
-                         help="Température de fin de maintien")
-    parser.add_argument("--temp-refroidissement", dest="temp_refroidissement", type=float,
-                         help="Température cible de refroidissement (par défaut = temp_montee_haute)")
+    parser.add_argument("--temp-delta-ambiant", dest="temp_delta_ambiant", type=float,
+                         help="Écart (°C) au-dessus de la température initiale marquant le début de la montée")
+    parser.add_argument("--temp-palier-1", dest="temp_palier_1", type=float, help="Température du palier 1")
+    parser.add_argument("--temp-delta-1", dest="temp_delta_1", type=float, help="Demi-tolérance (°C) du palier 1")
+    parser.add_argument("--temp-palier-2", dest="temp_palier_2", type=float, help="Température du palier 2")
+    parser.add_argument("--temp-delta-2", dest="temp_delta_2", type=float, help="Demi-tolérance (°C) du palier 2")
+    parser.add_argument("--temp-palier-3", dest="temp_palier_3", type=float, help="Température du palier 3 (refroidissement)")
+    parser.add_argument("--temp-delta-3", dest="temp_delta_3", type=float, help="Demi-tolérance (°C) du palier 3")
+    parser.add_argument("--temp-palier-4", dest="temp_palier_4", type=float, help="Température de sortie finale (palier 4)")
 
     args = parser.parse_args()
 
@@ -858,9 +935,10 @@ def main():
         sys.exit(1)
 
     print("=== Paramètres d'analyse ===")
-    for cle in ('CH_ignore_dT', 'courbe_reference', 'temp_montee_basse', 'temp_montee_haute',
-                'temp_maintien_debut', 'temp_maintien_fin', 'temp_refroidissement',
-                'zoom_marge_temperature', 'zoom_marge_temps', 'suffixe', 'suffixe_resultats'):
+    for cle in ('CH_ignore_dT', 'temp_delta_ambiant', 'temp_palier_1', 'temp_delta_1',
+                'temp_palier_2', 'temp_delta_2', 'temp_palier_3', 'temp_delta_3',
+                'temp_palier_4', 'zoom_marge_temperature', 'zoom_marge_temps',
+                'suffixe', 'suffixe_resultats'):
         print(f"{cle} = {config[cle]}")
     print()
 
