@@ -1,0 +1,56 @@
+# =========================================================================
+# Paramètres pour analyseHypertrempe.py
+# =========================================================================
+
+# --- Filtrage des voies ---
+# Une voie est ignorée si elle contient une valeur "-OVER" (dépassement de
+# capteur), ou si son amplitude (max - min) sur l'ensemble du fichier est
+# inférieure ou égale à CH_ignore_dT (voie jugée non pertinente).
+CH_ignore_dT: 20
+
+# --- Détection : voies utilisées ---
+# La détection des instants s'appuie toujours sur la PREMIÈRE et la
+# DERNIÈRE voie retenues (dans l'ordre des colonnes du fichier Excel) ;
+# toutes les voies retenues sont tracées (grisées) sur les graphiques.
+
+# --- t0 : début montée ---
+# t0 = 1ère voie franchit (montant) température_initiale + temp_delta_ambiant
+temp_delta_ambiant: 10
+
+# --- Palier 1 (t1 fin montée / t2 regroupement / t3 maintien) ---
+# t1 = 1ère voie franchit (montant) temp_palier_1 - temp_delta_1
+# t2 = dernière voie franchit (montant) temp_palier_1 - temp_delta_1
+# t3 = 1ère voie franchit (montant) temp_palier_1 + temp_delta_1
+temp_palier_1: 450
+temp_delta_1: 15
+
+# --- Palier 2 (t4 fin montée / t5 regroupement / t6 maintien / t7 sortie) ---
+# t4 = 1ère voie franchit (montant) temp_palier_2 - temp_delta_2
+# t5 = dernière voie franchit (montant) temp_palier_2 - temp_delta_2
+# t6 = 1ère voie franchit (montant) temp_palier_2 + temp_delta_2
+# t7 = dernière voie franchit (descendant) temp_palier_2 - temp_delta_2
+temp_palier_2: 550
+temp_delta_2: 15
+
+# --- Refroidissement palier 3 (t8 fin descente / t9 regroupement) ---
+# t8 = 1ère voie franchit (descendant) temp_palier_3 + temp_delta_3
+# t9 = dernière voie franchit (descendant) temp_palier_3 - temp_delta_3
+temp_palier_3: 300
+temp_delta_3: 15
+
+# --- Sortie finale (t10 fin descente) ---
+# t10 = 1ère voie franchit (descendant) temp_palier_4 (pas de delta)
+temp_palier_4: 50
+
+# --- Fenêtres de zoom (appliquées aux 4 graphiques de droite) ---
+zoom_marge_temperature: 20   # °C, marge ajoutée en haut/bas de chaque zoom
+zoom_marge_temps: 5          # minutes, marge ajoutée avant/après chaque zoom
+
+# --- Sorties ---
+# Image     : <nom_fichier_excel>_<suffixe>.png
+# Résultats : <nom_fichier_excel>_<suffixe_resultats>.txt
+# (formalisme strict imposé, voir hypothèse 8 en tête du script)
+suffixe: Analyse
+suffixe_resultats: Resultats
+dpi: 150
+figure_taille: [16, 11]
