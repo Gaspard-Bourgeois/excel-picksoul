@@ -74,7 +74,7 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
        température maximale de maintien est le maximum de la courbe de
        référence entre t3 et t4 (inclus),
      - t5 = premier instant, après t4, où elle repasse (en descendant)
-       sous `temp_refroidissement` (par défaut = `temp_montee_haute` si
+       sous `temp_refroidissement` (par défaut = `temp_montee_basse` si
        non renseigné) -> vitesse de refroidissement =
        (valeur en t4 - valeur en t5) / durée(t4->t5), en °C/min.
    Tous les franchissements sont interpolés linéairement entre les deux
@@ -120,8 +120,20 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
 9. Température initiale : première valeur (au premier instant du fichier)
    de la courbe de référence.
 
-10. Formatage des durées en minutes (ex. "5 min" ou "5.3 min") plutôt
+10. Toutes les valeurs de sortie (température initiale, durées, vitesse de
+    refroidissement) sont arrondies à l'entier le plus proche, sans
+    décimale (ex. "5 min", "39°C"). Formatage des durées en minutes plutôt
     qu'en "HH:MM:SS", le cycle thermique étudié se comptant en minutes.
+
+11. Couleurs : chaque « point d'intérêt » (t1 montée basse, t2 montée
+    haute, t3 maintien début, t4 maintien fin, t5 refroidissement) a sa
+    propre couleur fixe, réutilisée à l'identique sur les 4 graphiques
+    (trait de seuil, trait vertical, marqueur, texte d'annotation) plutôt
+    qu'une couleur générique "début/fin" — utile notamment quand deux
+    seuils ont la même valeur (ex. maintien_debut == maintien_fin) et que
+    les traits se superposeraient sinon. Les annotations textuelles sont
+    posées sur un fond blanc semi-opaque pour rester lisibles par-dessus
+    les courbes sombres.
 -------------------------------------------------------------------------
 """
 
@@ -360,15 +372,15 @@ def fmt_num(x, decimales=1):
 
 
 def fmt_temperature(x):
-    return "N/A" if x is None else f"{fmt_num(x)}°C"
+    return "N/A" if x is None else f"{fmt_num(x, 0)}°C"
 
 
 def fmt_duree_min(minutes):
-    return "N/A" if minutes is None else f"{fmt_num(minutes)} min"
+    return "N/A" if minutes is None else f"{fmt_num(minutes, 0)} min"
 
 
 def fmt_vitesse(x):
-    return "N/A" if x is None else f"{fmt_num(x)}°C/min"
+    return "N/A" if x is None else f"{fmt_num(x, 0)}°C/min"
 
 
 # =========================================================================
@@ -377,6 +389,24 @@ def fmt_vitesse(x):
 
 _COULEUR_GRISE = '0.75'
 _COULEUR_REFERENCE = 'black'
+
+# Une couleur fixe par point d'intérêt, réutilisée à l'identique sur les
+# 4 graphiques (voir hypothèse 11 en tête de fichier).
+COULEURS_POINTS = {
+    't1': '#1f77b4',  # bleu    - montée basse
+    't2': '#ff7f0e',  # orange  - montée haute
+    't3': '#2ca02c',  # vert    - maintien début
+    't4': '#d62728',  # rouge   - maintien fin
+    't5': '#9467bd',  # violet  - refroidissement
+}
+LABELS_POINTS = {
+    't1': 'Montée basse',
+    't2': 'Montée haute',
+    't3': 'Maintien début',
+    't4': 'Maintien fin',
+    't5': 'Refroidissement',
+}
+_COULEUR_MAX_MAINTIEN = 'teal'
 
 
 def _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max):
@@ -404,10 +434,13 @@ def _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max):
         ax.plot(xs_ref, ys_ref, color=_COULEUR_REFERENCE, linewidth=2, label=nom_ref, zorder=3)
 
 
-def _annoter_point(ax, instant, valeur, texte, decalage=(6, 6), ha='left'):
-    ax.plot([instant], [valeur], marker='o', color='red', markersize=6, zorder=6)
+def _annoter_point(ax, instant, valeur, texte, couleur, decalage=(6, 6), ha='left'):
+    ax.plot([instant], [valeur], marker='o', color=couleur, markersize=6,
+             markeredgecolor='white', markeredgewidth=0.7, zorder=6)
     ax.annotate(texte, xy=(instant, valeur), xytext=decalage, textcoords='offset points',
-                 color='red', fontsize=8, fontweight='bold', ha=ha)
+                 color=couleur, fontsize=8, fontweight='bold', ha=ha,
+                 bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                           edgecolor=couleur, linewidth=1, alpha=0.9))
 
 
 def _tracer_zoom_montee(ax, dates, voies, nom_ref, ref, cycle, config):
@@ -425,13 +458,14 @@ def _tracer_zoom_montee(ax, dates, voies, nom_ref, ref, cycle, config):
     y_max = config['temp_montee_haute'] + marge_T
 
     _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max)
-    ax.axhline(config['temp_montee_basse'], color='orange', linestyle='--', linewidth=1)
-    ax.axhline(config['temp_montee_haute'], color='red', linestyle='--', linewidth=1)
+    ax.axhline(config['temp_montee_basse'], color=COULEURS_POINTS['t1'], linestyle='--', linewidth=1.2)
+    ax.axhline(config['temp_montee_haute'], color=COULEURS_POINTS['t2'], linestyle='--', linewidth=1.2)
     _annoter_point(ax, t1, config['temp_montee_basse'],
-                    f"{t1.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_montee_basse'])}")
+                    f"{t1.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_montee_basse'])}",
+                    COULEURS_POINTS['t1'])
     _annoter_point(ax, t2, config['temp_montee_haute'],
                     f"{t2.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_montee_haute'])}",
-                    decalage=(-8, 6), ha='right')
+                    COULEURS_POINTS['t2'], decalage=(-8, 6), ha='right')
 
     ax.set_xlim(t_min, t_max)
     ax.set_ylim(y_min, y_max)
@@ -460,17 +494,20 @@ def _tracer_zoom_maintien(ax, dates, voies, nom_ref, ref, cycle, config):
     y_max = t_max_maintien + marge_T
 
     _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max)
-    ax.axhline(config['temp_maintien_debut'], color='orange', linestyle='--', linewidth=1)
-    ax.axhline(config['temp_maintien_fin'], color='red', linestyle='--', linewidth=1)
-    ax.axhline(t_max_maintien, color='green', linestyle=':', linewidth=1.3)
+    ax.axhline(config['temp_maintien_debut'], color=COULEURS_POINTS['t3'], linestyle='--', linewidth=1.2)
+    ax.axhline(config['temp_maintien_fin'], color=COULEURS_POINTS['t4'], linestyle='--', linewidth=1.2)
+    ax.axhline(t_max_maintien, color=_COULEUR_MAX_MAINTIEN, linestyle=':', linewidth=1.3)
     _annoter_point(ax, t3, config['temp_maintien_debut'],
-                    f"{t3.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_maintien_debut'])}")
+                    f"{t3.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_maintien_debut'])}",
+                    COULEURS_POINTS['t3'])
     _annoter_point(ax, t4, config['temp_maintien_fin'],
                     f"{t4.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_maintien_fin'])}",
-                    decalage=(-8, 6), ha='right')
+                    COULEURS_POINTS['t4'], decalage=(-8, 6), ha='right')
     ax.annotate(f"Max : {fmt_temperature(t_max_maintien)}", xy=(t_max, t_max_maintien),
                  xytext=(-6, 6), textcoords='offset points', ha='right',
-                 color='green', fontsize=8, fontweight='bold')
+                 color=_COULEUR_MAX_MAINTIEN, fontsize=8, fontweight='bold',
+                 bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                           edgecolor=_COULEUR_MAX_MAINTIEN, linewidth=1, alpha=0.9))
 
     ax.set_xlim(t_min, t_max)
     ax.set_ylim(y_min, y_max)
@@ -498,13 +535,14 @@ def _tracer_zoom_refroidissement(ax, dates, voies, nom_ref, ref, cycle, config):
     y_max = config['temp_maintien_fin'] + marge_T
 
     _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max)
-    ax.axhline(config['temp_maintien_fin'], color='orange', linestyle='--', linewidth=1)
-    ax.axhline(config['temp_refroidissement'], color='red', linestyle='--', linewidth=1)
+    ax.axhline(config['temp_maintien_fin'], color=COULEURS_POINTS['t4'], linestyle='--', linewidth=1.2)
+    ax.axhline(config['temp_refroidissement'], color=COULEURS_POINTS['t5'], linestyle='--', linewidth=1.2)
     _annoter_point(ax, t4, config['temp_maintien_fin'],
-                    f"{t4.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_maintien_fin'])}")
+                    f"{t4.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_maintien_fin'])}",
+                    COULEURS_POINTS['t4'])
     _annoter_point(ax, t5, config['temp_refroidissement'],
                     f"{t5.strftime('%H:%M:%S')}\n{fmt_temperature(config['temp_refroidissement'])}",
-                    decalage=(-8, 6), ha='right')
+                    COULEURS_POINTS['t5'], decalage=(-8, 6), ha='right')
 
     ax.set_xlim(t_min, t_max)
     ax.set_ylim(y_min, y_max)
@@ -537,11 +575,11 @@ def tracer_graphique(fichier, titre, dates, voies, nom_ref, ref, cycle, config):
         premiere_grise = False
     ax_gauche.plot(dates, ref, color=_COULEUR_REFERENCE, linewidth=2, label=nom_ref, zorder=3)
 
-    for instant, couleur in ((cycle['t1'], 'orange'), (cycle['t2'], 'red'),
-                              (cycle['t3'], 'orange'), (cycle['t4'], 'red'),
-                              (cycle['t5'], 'blue')):
+    for cle, couleur in COULEURS_POINTS.items():
+        instant = cycle[cle]
         if instant is not None:
-            ax_gauche.axvline(instant, color=couleur, linestyle='--', linewidth=1, alpha=0.6)
+            ax_gauche.axvline(instant, color=couleur, linestyle='--', linewidth=1.3,
+                                alpha=0.8, label=LABELS_POINTS[cle])
     ax_gauche.set_xlabel("Temps")
     ax_gauche.set_ylabel("Température (°C)")
     ax_gauche.xaxis.set_major_formatter(mdates.DateFormatter('%Y/%m/%d %H:%M:%S'))
@@ -549,7 +587,7 @@ def tracer_graphique(fichier, titre, dates, voies, nom_ref, ref, cycle, config):
         lbl.set_rotation(30)
         lbl.set_ha('right')
     ax_gauche.grid(True, alpha=0.3)
-    ax_gauche.legend(loc='upper left', ncol=2, fontsize=8, framealpha=0.9)
+    ax_gauche.legend(loc='upper left', ncol=2, fontsize=7, framealpha=0.9)
 
     # --- Zooms montée / maintien / refroidissement ---
     _tracer_zoom_montee(ax_montee, dates, voies, nom_ref, ref, cycle, config)
@@ -566,7 +604,7 @@ def tracer_graphique(fichier, titre, dates, voies, nom_ref, ref, cycle, config):
               f"Vitesse refroid. : {fmt_vitesse(cycle['vitesse_refroidissement'])}",
               ha='center', fontsize=9, color='dimgray')
 
-    fig.subplots_adjust(top=0.88, bottom=0.10, left=0.06, right=0.95)
+    fig.subplots_adjust(top=0.88, bottom=0.16, left=0.06, right=0.95)
     return fig
 
 
@@ -658,7 +696,7 @@ def analyser_fichier(fichier, config):
 
     base, _ = os.path.splitext(fichier)
     fichier_image = f"{base}_{config['suffixe']}.{config['format_image']}"
-    fig.savefig(fichier_image, dpi=config['dpi'])
+    fig.savefig(fichier_image, dpi=config['dpi'], bbox_inches='tight')
     plt.close(fig)
     print(f"✅ Graphique généré -> {fichier_image}")
 
@@ -717,14 +755,15 @@ def construire_config(args):
             return cli_val
         return yaml_params.get(cle_yaml, DEFAULTS[cle_yaml])
 
+    temp_montee_basse = float(valeur(args.temp_montee_basse, 'temp_montee_basse'))
     temp_montee_haute = float(valeur(args.temp_montee_haute, 'temp_montee_haute'))
     temp_refroidissement = valeur(args.temp_refroidissement, 'temp_refroidissement')
-    temp_refroidissement = temp_montee_haute if temp_refroidissement is None else float(temp_refroidissement)
+    temp_refroidissement = temp_montee_basse if temp_refroidissement is None else float(temp_refroidissement)
 
     config = {
         'CH_ignore_dT': float(valeur(args.ch_ignore_dt, 'CH_ignore_dT')),
         'courbe_reference': str(yaml_params.get('courbe_reference', DEFAULTS['courbe_reference'])),
-        'temp_montee_basse': float(valeur(args.temp_montee_basse, 'temp_montee_basse')),
+        'temp_montee_basse': temp_montee_basse,
         'temp_montee_haute': temp_montee_haute,
         'temp_maintien_debut': float(valeur(args.temp_maintien_debut, 'temp_maintien_debut')),
         'temp_maintien_fin': float(valeur(args.temp_maintien_fin, 'temp_maintien_fin')),
