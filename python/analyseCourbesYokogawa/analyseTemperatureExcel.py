@@ -393,6 +393,7 @@ _COULEUR_REFERENCE = 'black'
 # Une couleur fixe par point d'intérêt, réutilisée à l'identique sur les
 # 4 graphiques (voir hypothèse 11 en tête de fichier).
 COULEURS_POINTS = {
+    't0': '#8c564b',  # brun    - température initiale
     't1': '#1f77b4',  # bleu    - montée basse
     't2': '#ff7f0e',  # orange  - montée haute
     't3': '#2ca02c',  # vert    - maintien début
@@ -400,6 +401,7 @@ COULEURS_POINTS = {
     't5': '#9467bd',  # violet  - refroidissement
 }
 LABELS_POINTS = {
+    't0': 'Température initiale',
     't1': 'Montée basse',
     't2': 'Montée haute',
     't3': 'Maintien début',
@@ -434,9 +436,9 @@ def _tracer_courbes_fenetre(ax, dates, voies, nom_ref, ref, t_min, t_max):
         ax.plot(xs_ref, ys_ref, color=_COULEUR_REFERENCE, linewidth=2, label=nom_ref, zorder=3)
 
 
-def _annoter_point(ax, instant, valeur, texte, couleur, decalage=(6, 6), ha='left'):
+def _annoter_point(ax, instant, valeur, texte, couleur, decalage=(6, 6), ha='left', label=None):
     ax.plot([instant], [valeur], marker='o', color=couleur, markersize=6,
-             markeredgecolor='white', markeredgewidth=0.7, zorder=6)
+             markeredgecolor='white', markeredgewidth=0.7, zorder=6, label=label)
     ax.annotate(texte, xy=(instant, valeur), xytext=decalage, textcoords='offset points',
                  color=couleur, fontsize=8, fontweight='bold', ha=ha,
                  bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
@@ -475,7 +477,7 @@ def _tracer_zoom_montee(ax, dates, voies, nom_ref, ref, cycle, config):
         lbl.set_ha('right')
     ax.set_ylabel("Température (°C)")
     ax.grid(True, alpha=0.3)
-    ax.set_title(f"Montée — durée : {fmt_duree_min(cycle['duree_montee_min'])}", fontweight='bold')
+    ax.set_title(f"Montée — durée : {fmt_duree_min(cycle['duree_montee_min'])}", fontweight='bold', pad=14)
 
 
 def _tracer_zoom_maintien(ax, dates, voies, nom_ref, ref, cycle, config):
@@ -517,7 +519,7 @@ def _tracer_zoom_maintien(ax, dates, voies, nom_ref, ref, cycle, config):
         lbl.set_ha('right')
     ax.set_ylabel("Température (°C)")
     ax.grid(True, alpha=0.3)
-    ax.set_title(f"Maintien — durée : {fmt_duree_min(cycle['duree_maintien_min'])}", fontweight='bold')
+    ax.set_title(f"Maintien — durée : {fmt_duree_min(cycle['duree_maintien_min'])}", fontweight='bold', pad=14)
 
 
 def _tracer_zoom_refroidissement(ax, dates, voies, nom_ref, ref, cycle, config):
@@ -553,7 +555,7 @@ def _tracer_zoom_refroidissement(ax, dates, voies, nom_ref, ref, cycle, config):
     ax.set_ylabel("Température (°C)")
     ax.grid(True, alpha=0.3)
     ax.set_title(f"Refroidissement — vitesse : {fmt_vitesse(cycle['vitesse_refroidissement'])}",
-                  fontweight='bold')
+                  fontweight='bold', pad=14)
 
 
 def tracer_graphique(fichier, titre, dates, voies, nom_ref, ref, cycle, config):
@@ -575,7 +577,14 @@ def tracer_graphique(fichier, titre, dates, voies, nom_ref, ref, cycle, config):
         premiere_grise = False
     ax_gauche.plot(dates, ref, color=_COULEUR_REFERENCE, linewidth=2, label=nom_ref, zorder=3)
 
+    if cycle['temp_initiale'] is not None and dates:
+        _annoter_point(ax_gauche, dates[0], cycle['temp_initiale'],
+                        f"{dates[0].strftime('%H:%M:%S')}\n{fmt_temperature(cycle['temp_initiale'])}",
+                        COULEURS_POINTS['t0'], decalage=(8, 8), label=LABELS_POINTS['t0'])
+
     for cle, couleur in COULEURS_POINTS.items():
+        if cle == 't0':
+            continue
         instant = cycle[cle]
         if instant is not None:
             ax_gauche.axvline(instant, color=couleur, linestyle='--', linewidth=1.3,
