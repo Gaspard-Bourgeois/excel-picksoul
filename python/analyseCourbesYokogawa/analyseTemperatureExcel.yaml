@@ -34,7 +34,7 @@ temp_maintien_fin: 200
 # --- Refroidissement ---
 # t5 = premier instant, après t4, où la courbe repasse sous
 # temp_refroidissement. Si laissé à "null", prend par défaut la valeur de
-# temp_montee_haute.
+# temp_montee_basse.
 # vitesse de refroidissement = (temp_maintien_fin - temp_refroidissement) / durée(t4->t5), en °C/min
 temp_refroidissement: null
 
