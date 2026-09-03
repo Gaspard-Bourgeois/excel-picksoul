@@ -1,5 +1,5 @@
 # =========================================================================
-# Paramètres pour analyseHypertrempe.py
+# Paramètres pour analyseDetensionnement.py
 # =========================================================================
 
 # --- Filtrage des voies ---
@@ -9,12 +9,14 @@
 CH_ignore_dT: 20
 
 # --- Détection : voies utilisées ---
-# La détection des instants s'appuie toujours sur la PREMIÈRE et la
-# DERNIÈRE voie retenues (dans l'ordre des colonnes du fichier Excel) ;
-# toutes les voies retenues sont tracées (grisées) sur les graphiques.
+# À chaque étape, la "première" voie = celle qui franchit le seuil de
+# cette étape le plus tôt parmi TOUTES les voies retenues ; la "dernière"
+# voie = celle qui le franchit le plus tard. Ce n'est pas une voie fixe :
+# elle peut différer d'une étape à l'autre. Toutes les voies retenues sont
+# tracées (grisées) sur les graphiques.
 
 # --- t0 : début montée ---
-# t0 = 1ère voie franchit (montant) température_initiale + temp_delta_ambiant
+# t0 = 1ère voie (la plus rapide) franchit (montant) température_initiale + temp_delta_ambiant
 temp_delta_ambiant: 10
 
 # --- Palier 1 (t1 fin montée / t2 regroupement / t3 maintien) ---
