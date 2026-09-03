@@ -4,15 +4,13 @@ analyseTemperatureExcel.py
 Analyse un (ou plusieurs) fichier(s) Excel d'enregistreur de température
 (type SMARTDAC+, colonnes CHxxxx) et génère, pour chacun, une image
 regroupant :
-  - un graphique bas (pleine largeur) montrant l'ensemble des voies
+  - un graphique gauche (pleine hauteur) montrant l'ensemble des voies
     retenues après filtrage,
-  - un zoom en haut à gauche sur l'instant de franchissement du seuil de
-    montée,
-  - un zoom en haut à droite sur l'instant de franchissement du seuil de
-    descente.
+  - un zoom en haut à droite sur la montée,
+  - un zoom au centre à droite sur le maintien
+  - un zoom en bas à droite sur le refroidissement
 
-La logique de récupération des paramètres via un fichier YAML s'inspire de
-decalageParachevementJBI.py : les paramètres se trouvent dans un fichier
+Les paramètres se trouvent dans un fichier
 YAML (par défaut analyseTemperatureExcel.yaml), avec quelques surcharges
 possibles en ligne de commande pour les seuils principaux.
 
@@ -28,16 +26,14 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
 
 1. Structure du fichier Excel : la ligne d'en-tête des voies est repérée
    automatiquement en cherchant la première ligne contenant des cellules du
-   type "CH0001", "CH0002"... (pas de numéro de ligne fixe). La ligne de
+   type "CH0001", "CH0002"... ou bien "CHC001", "CHC002",... (pas de numéro de ligne fixe). La ligne de
    début des données est repérée en cherchant, après cette ligne, la ligne
    dont la colonne A vaut "Date" et la colonne B vaut "Time" : les données
    commencent juste après. La lecture s'arrête à la première ligne dont la
    colonne "Date" est vide.
 
 2. Cellule `titre_graphique` : repérée en cherchant, en colonne A, la ligne
-   dont le libellé correspond au paramètre `titre_graphique_label` (par
-   défaut "Batch No.", conforme au fichier d'exemple fourni), et en lisant
-   la valeur en colonne `titre_graphique_col` (par défaut colonne C, comme
+   dont le libellé est "Batch No.", et en lisant la valeur en colonne `titre_graphique_col` (par défaut colonne C, comme
    les autres champs "libellé / valeur" de cet en-tête).
 
 3. `CH_ignore_dT` : une voie est CONSERVÉE si (max - min) de ses valeurs
@@ -47,42 +43,46 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
    une valeur de type "-OVER" (ou plus généralement toute chaîne contenant
    "OVER") est ignorée avant même ce calcul, quelle que soit son amplitude.
 
-4. `time_ignore_dT` : pour chaque voie conservée, on cherche le premier
-   instant où la valeur s'écarte de plus de `time_ignore_dT` de sa valeur
-   de départ (respectivement de sa valeur d'arrivée, en partant de la fin).
-   La fenêtre temporelle globale retenue est [début, fin] avec :
-     - début = le PLUS PETIT de ces indices de départ parmi toutes les
-       voies conservées (on rogne uniquement la portion initiale strictement
-       plate pour TOUTES les voies),
-     - fin = le PLUS GRAND des indices d'arrivée symétriques (on rogne
-       uniquement la portion finale strictement plate pour TOUTES les
-       voies).
-   Si une voie ne varie jamais de plus de `time_ignore_dT`, elle ne
-   contribue pas à réduire la fenêtre (bornes d'origine conservées pour
-   elle).
+4. `time_ignore_dT` n'est plus nécessaire, on ne fait plus de filtrage temporel
 
-5. Franchissement de seuil (montée / descente) : recherché par
-   interpolation linéaire entre les deux échantillons encadrant le
-   franchissement, pour un instant précis (et pas seulement à la
-   résolution de l'échantillonnage). Pour une voie qui ne franchit jamais
-   le seuil dans le sens demandé, elle est simplement exclue du calcul de
-   l'instant de référence (elle reste toutefois affichée sur les
-   graphiques).
+5. Température initiale : température initiale (en °C) de la courbe
 
-6. `seuil_montant_first_or_last` / `seuil_descente_first_or_last` :
-   valeur "first" -> on retient l'instant le plus TÔT parmi toutes les
-   voies qui franchissent le seuil ; valeur "last" -> on retient l'instant
-   le plus TARDIF (donc l'instant où TOUTES les voies concernées ont déjà
-   franchi le seuil).
+6. Durée de montée : calcul le temps (en min) entre les points qui dépasse la température basse de montée (paramètre) 
+   et la température haute de montée (paramètre). Les deux points de températures seront visibles et tracés sur le graphique
+   de montée, la durée entre les deux points apparaitra également
 
-7. Fenêtres de zoom : `graphique_montant_dT` / `graphique_descente_dT`
-   sont des demi-amplitudes en °C (axe Y centré sur le seuil, de
-   seuil-dT à seuil+dT) ; `graphique_montant_dt` / `graphique_descente_dt`
-   sont des demi-fenêtres temporelles en SECONDES (axe X centré sur
-   l'instant détecté).
+7. Maintien : La temparature maximale (en °C) obtenue entre la température de début de maintien (paramètre) et 
+   la température de fin de maintien (paramètre) sera calculé et visible sur le graphique de maitien
+   La durée entre ces deux températures sera également calulée et affichée
 
-8. Fichier de sortie : `<nom_fichier_excel_sans_extension>_<suffixe>.<format_image>`,
+8. La vitesse de refroidissement (en °C /min) entre la température de fin de maintien et 
+   la température de refroidissement (paramètre par défaut égale à la température haute de montée précédente)
+   sera calulé grâce à la différence de température entre les points trouvés divisé par la durée entre ces points
+
+
+7. `seuil_montant_first_or_last` / `seuil_descente_first_or_last` : ne sont plus nécessaire
+
+
+8. Sur les fenêtres de zoom, on ajoutera une marge de température et/ou de temps à l'aide de 2 variables paramètrabes
+
+9. Fichier de sortie : `<nom_fichier_excel_sans_extension>_<suffixe>.<format_image>`,
    dans le même dossier que le fichier Excel source.
+   
+10. Un second fichier de sortie avec un suffixe différente (paramètre) contiendra les valeurs de sorties suivantes sous 
+   forme d'un tableau dont les colonnes sont représenté par une tabulation dont voici un exemple :
+	12°C
+5 min	
+600°C	
+5 min	
+40°C/min	
+
+Qui représente :
+	température initiale
+durée de montée 	
+température maximale de maintien	
+durée de maintien	
+vitesse de refroidissement	
+
 -------------------------------------------------------------------------
 """
 
