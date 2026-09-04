@@ -4,13 +4,18 @@ analyseDetensionnement.py
 Analyse un (ou plusieurs) fichier(s) Excel d'enregistreur de température
 (type SMARTDAC+, colonnes CHxxxx / CHCxxx) et génère, pour chacun, une
 image regroupant :
-  - un graphique gauche (pleine hauteur) montrant l'ensemble des voies
+  - un graphique en bas à gauche (sur 2 colonnes et 4 lignes) montrant l'ensemble des voies
     retenues après filtrage (grisées),
-  - 10 petits graphiques à droite (répartis sur 2 colonnes), un par
-    sous-phase du cycle : montée 1, regroupement 1, maintien 1, montée 2,
-    regroupement 2, maintien 2, sortie 2, descente 3, regroupement 3,
-    descente 4 — chaque sous-phase est isolée dans son propre graphique
-    pour ne pas surcharger un même graphique avec trop d'informations,
+  - un graphique (colonne 1, ligne 1) avec la montée 1
+  - un graphique (colonne 2, ligne 1) avec le regroupement 1 et le maintient 1
+  - un graphique (colonne 3, ligne 1) avec la montée 2
+  - un graphique (colonne 3, ligne 2) avec le regroupement 2, le maintien 2 et la sortie 2
+  - un graphique (colonne 3, ligne 3) avec la descente 3
+  - un graphique (colonne 3, ligne 4) avec le regroupement 3
+  - un graphique (colonne 3, ligne 5) avec la descente 4  
+  On tâchera de choisir des couleurs proche pour regroupement, maintien et sortie de même numéro.
+  La couleur des lignes horizontales des montées et desentes seront celles des regroupement ou maintien les entourant pour standardiser un maximum les lignes horizontales à une température donnée.
+  
 ainsi qu'un second fichier texte contenant les valeurs de synthèse du
 cycle (température initiale, vitesses de montée/descente, durées de
 regroupement/maintien/sortie, température de maintien 2), au format
@@ -68,32 +73,27 @@ HYPOTHÈSES / CHOIX DE CONCEPTION (assumés faute de spécification exacte) :
        calculée entre t0 et t1
      - t2 (regroupement 1) = DERNIÈRE voie à franchir (montant) le même
        seuil que t1 -> durée de regroupement 1 = t2 - t1
-     - t3 (maintien 1) = 1ère voie à franchir (montant)
-       `temp_palier_1` + `temp_delta_1` -> durée de maintien 1 = t3 - t2
+     - t3 (maintien 1) = 1ère voie à sortir de la fourchette
+       [`temp_palier_1` - `temp_delta_1`, `temp_palier_1` + `temp_delta_1`] -> durée de maintien 1 = t3 - t2
      - t4 (fin montée 2) = 1ère voie à franchir (montant)
        `temp_palier_2` - `temp_delta_2` -> vitesse de montée 2 (°C/h)
        calculée entre t3 et t4
      - t5 (regroupement 2) = DERNIÈRE voie à franchir (montant) le même
        seuil que t4 -> durée de regroupement 2 = t5 - t4
-       [ÉTAPE AJOUTÉE : le cahier des charges ne décrivait pas
-       explicitement de palier "regroupement 2" symétrique du
-       regroupement 1, mais la liste des 12 valeurs de sortie demandées
-       (hypothèse 8) inclut une "Durée de regroupement 2" — cette étape a
-       donc été ajoutée par symétrie avec le palier 1]
-     - t6 (maintien 2) = 1ère voie à franchir (montant)
-       `temp_palier_2` + `temp_delta_2` -> durée de maintien 2 = t6 - t5 ;
+     - t6 (maintien 2) = 1ère voie à sortir de la fourchette
+       [`temp_palier_2` - `temp_delta_2`, `temp_palier_2` + `temp_delta_2`] -> durée de maintien 2 = t6 - t5 ;
        la "température de maintien 2" est le maximum atteint, TOUTES
        voies retenues confondues, entre t5 et t6
      - t7 (sortie 2) = DERNIÈRE voie à franchir (descendant)
        `temp_palier_2` - `temp_delta_2` -> durée de sortie 2 = t7 - t6
      - t8 (fin descente 3) = 1ère voie à franchir (descendant)
        `temp_palier_3` + `temp_delta_3` -> vitesse de descente 3 (°C/h)
-       calculée entre t7 et t8
+       calculée entre t8 et t7
      - t9 (regroupement 3) = DERNIÈRE voie à franchir (descendant)
        `temp_palier_3` - `temp_delta_3` -> durée de regroupement 3 = t9 - t8
      - t10 (fin descente 4) = 1ère voie à franchir (descendant)
-       `temp_palier_4` -> vitesse de descente 4 (°C/h) calculée entre t9
-       et t10
+       `temp_palier_4` -> vitesse de descente 4 (°C/h) calculée entre t10
+       et t9
    Tous les franchissements sont interpolés linéairement entre les deux
    échantillons encadrants. Si une étape n'est pas trouvée, les étapes
    suivantes ne sont pas calculées (valeurs "N/A" dans les sorties).
